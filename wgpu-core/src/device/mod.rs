@@ -4849,7 +4849,13 @@ impl<G: GlobalIdentityHandlerFactory> Global<G> {
             let mut hal_config = hal::SurfaceConfiguration {
                 swap_chain_size: num_frames,
                 present_mode: config.present_mode,
-                composite_alpha_mode: hal::CompositeAlphaMode::PreMultiplied,
+                composite_alpha_mode: if caps.composite_alpha_modes.contains(&hal::CompositeAlphaMode::PreMultiplied) {
+                    hal::CompositeAlphaMode::PreMultiplied
+                } else if caps.composite_alpha_modes.contains(&hal::CompositeAlphaMode::PostMultiplied) {
+                    hal::CompositeAlphaMode::PostMultiplied
+                } else {
+                    hal::CompositeAlphaMode::Opaque
+                },
                 format: config.format,
                 extent: wgt::Extent3d {
                     width: config.width,
