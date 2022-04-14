@@ -223,6 +223,8 @@ struct Stored<T> {
     ref_count: RefCount,
 }
 
+pub use crate::hub::HalApi;
+
 const DOWNLEVEL_WARNING_MESSAGE: &str = "The underlying API or device in use does not \
 support enough features to be a fully compliant implementation of WebGPU. A subset of the features can still be used. \
 If you are running this program on native and not in a browser and wish to limit the features you use to the supported subset, \

@@ -836,6 +836,7 @@ impl crate::Device<super::Api> for super::Device {
                         ty: wgt::BufferBindingType::Storage { .. },
                         ..
                     } => &mut num_storage_buffers,
+                    wgt::BindingType::ExternalTexture => &mut num_textures,
                 };
 
                 binding_to_slot[entry.binding as usize] = *counter;
@@ -894,7 +895,7 @@ impl crate::Device<super::Api> for super::Device {
                             "This is an implementation problem of wgpu-hal/gles backend.")
                     }
                     let (raw, target) = view.inner.as_native();
-                    super::RawBinding::Texture { raw, target }
+                    super::RawBinding::Texture { raw, target, is_external: false }
                 }
                 wgt::BindingType::StorageTexture {
                     access,
@@ -915,7 +916,11 @@ impl crate::Device<super::Api> for super::Device {
                         access: conv::map_storage_access(access),
                         format: format_desc.internal,
                     })
-                }
+                },
+                wgt::BindingType::ExternalTexture => {
+                    let external_texture = desc.external_textures[entry.resource_index as usize];
+                    super::RawBinding::Texture { target: glow::TEXTURE_2D, raw: external_texture.clone(), is_external: true }
+                },
             };
             contents.push(binding);
         }

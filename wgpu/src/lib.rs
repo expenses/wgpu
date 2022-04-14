@@ -185,6 +185,7 @@ trait Context: Debug + Send + Sized + Sync {
     type RenderBundleEncoderId: Debug + RenderInner<Self>;
     type RenderBundleId: Debug + Send + Sync + 'static;
     type SurfaceId: Debug + Send + Sync + 'static;
+    type ExternalTextureId: Debug + Send + Sync + 'static;
 
     type SurfaceOutputDetail: Send;
 
@@ -301,6 +302,12 @@ trait Context: Debug + Send + Sized + Sync {
         device: &Self::DeviceId,
         desc: &TextureDescriptor,
     ) -> Self::TextureId;
+    fn device_create_external_texture(
+        &self,
+        device: &Self::DeviceId,
+        label: Label,
+        external_texture: Box<dyn std::any::Any>,
+    ) -> Self::ExternalTextureId;
     fn device_create_sampler(
         &self,
         device: &Self::DeviceId,
@@ -1034,6 +1041,14 @@ pub enum BindingResource<'a> {
     /// Corresponds to [`wgt::BindingType::Texture`] and [`wgt::BindingType::StorageTexture`] with
     /// [`BindGroupLayoutEntry::count`] set to Some.
     TextureViewArray(&'a [&'a TextureView]),
+
+    ExternalTexture(&'a ExternalTexture),
+}
+
+#[derive(Debug)]
+pub struct ExternalTexture {
+    context: Arc<C>,
+    id: <C as Context>::ExternalTextureId,
 }
 
 /// Describes the segment of a buffer to bind.
@@ -1841,6 +1856,22 @@ impl Device {
         }
     }
 
+    pub fn create_external_texture(
+        &self,
+        label: Label,
+        external_texture: Box<dyn std::any::Any>,
+    ) -> ExternalTexture {
+        ExternalTexture {
+            context: Arc::clone(&self.context),
+            id: Context::device_create_external_texture(
+                &*self.context,
+                &self.id,
+                label,
+                external_texture,
+            ),
+        }
+    }
+
     /// Creates a new [`Texture`].
     ///
     /// `desc` specifies the general format of the texture.
@@ -1923,8 +1954,8 @@ impl Device {
     /// # Safety
     ///
     /// - The raw handle obtained from the hal Device must not be manually destroyed
-    #[cfg(any(not(target_arch = "wasm32"), feature = "emscripten"))]
-    pub unsafe fn as_hal<A: wgc::hub::HalApi, F: FnOnce(Option<&A::Device>) -> R, R>(
+    //#[cfg(any(not(target_arch = "wasm32"), feature = "emscripten"))]
+    pub unsafe fn as_hal<A: wgc::HalApi, F: FnOnce(Option<&A::Device>) -> R, R>(
         &self,
         hal_device_callback: F,
     ) -> R {

@@ -105,7 +105,7 @@ package = "wgpu-types"
 path = "../wgpu-types"
 version = "0.12"
 
-[target.'cfg(any(not(target_arch = "wasm32"), target_os = "emscripten"))'.dependencies.hal]
+[dependencies.hal]
 package = "wgpu-hal"
 path = "../wgpu-hal"
 version = "0.12"

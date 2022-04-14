@@ -2,7 +2,9 @@ use crate::{
     device::{DeviceError, MissingDownlevelFlags, MissingFeatures, SHADER_STAGE_COUNT},
     error::{ErrorFormatter, PrettyError},
     hub::Resource,
-    id::{BindGroupLayoutId, BufferId, DeviceId, SamplerId, TextureViewId, Valid},
+    id::{
+        BindGroupLayoutId, BufferId, DeviceId, ExternalTextureId, SamplerId, TextureViewId, Valid,
+    },
     init_tracker::{BufferInitTrackerAction, TextureInitTrackerAction},
     track::{TrackerSet, UsageConflict, DUMMY_SELECTOR},
     validation::{MissingBufferUsageError, MissingTextureUsageError},
@@ -290,6 +292,7 @@ pub(crate) struct BindingTypeMaxCountValidator {
     storage_buffers: PerStageBindingTypeCounter,
     storage_textures: PerStageBindingTypeCounter,
     uniform_buffers: PerStageBindingTypeCounter,
+    external_textures: PerStageBindingTypeCounter,
 }
 
 impl BindingTypeMaxCountValidator {
@@ -324,7 +327,10 @@ impl BindingTypeMaxCountValidator {
             }
             wgt::BindingType::StorageTexture { .. } => {
                 self.storage_textures.add(binding.visibility, count);
-            }
+            },
+            wgt::BindingType::ExternalTexture => {
+                self.external_textures.add(binding.visibility, count);
+            },
         }
     }
 
@@ -336,6 +342,7 @@ impl BindingTypeMaxCountValidator {
         self.storage_buffers.merge(&other.storage_buffers);
         self.storage_textures.merge(&other.storage_textures);
         self.uniform_buffers.merge(&other.uniform_buffers);
+        self.external_textures.merge(&other.external_textures);
     }
 
     pub(crate) fn validate(&self, limits: &wgt::Limits) -> Result<(), BindingTypeMaxCountError> {
@@ -666,6 +673,7 @@ pub enum BindingResource<'a> {
     SamplerArray(Cow<'a, [SamplerId]>),
     TextureView(TextureViewId),
     TextureViewArray(Cow<'a, [TextureViewId]>),
+    ExternalTexture(ExternalTextureId),
 }
 
 #[derive(Clone, Debug, Error)]

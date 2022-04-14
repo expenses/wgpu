@@ -3543,6 +3543,8 @@ pub enum BindingType {
         /// Dimension of the texture view that is going to be sampled.
         view_dimension: TextureViewDimension,
     },
+
+    ExternalTexture,
 }
 
 impl BindingType {

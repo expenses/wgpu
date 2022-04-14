@@ -169,6 +169,7 @@ pub type QueueId = DeviceId;
 pub type BufferId = Id<crate::resource::Buffer<Dummy>>;
 pub type TextureViewId = Id<crate::resource::TextureView<Dummy>>;
 pub type TextureId = Id<crate::resource::Texture<Dummy>>;
+pub type ExternalTextureId = Id<crate::resource::ExternalTexture<Dummy>>;
 pub type SamplerId = Id<crate::resource::Sampler<Dummy>>;
 // Binding model
 pub type BindGroupLayoutId = Id<crate::binding_model::BindGroupLayout<Dummy>>;

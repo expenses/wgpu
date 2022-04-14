@@ -79,6 +79,7 @@ impl crate::Api for Api {
     type ShaderModule = ShaderModule;
     type RenderPipeline = RenderPipeline;
     type ComputePipeline = ComputePipeline;
+    type ExternalTexture = ();
 }
 
 // Limited by D3D12's root signature size of 64. Each element takes 1 or 2 entries.

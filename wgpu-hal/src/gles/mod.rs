@@ -115,6 +115,7 @@ impl crate::Api for Api {
     type ShaderModule = ShaderModule;
     type RenderPipeline = RenderPipeline;
     type ComputePipeline = ComputePipeline;
+    type ExternalTexture = glow::Texture;
 }
 
 bitflags::bitflags! {
@@ -195,6 +196,12 @@ pub struct Device {
     main_vao: glow::VertexArray,
     #[cfg(feature = "renderdoc")]
     render_doc: crate::auxil::renderdoc::RenderDoc,
+}
+
+impl Device {
+    pub fn glow_context(&self) -> &glow::Context {
+        &self.shared.context.glow_context
+    }
 }
 
 pub struct Queue {
@@ -344,6 +351,7 @@ enum RawBinding {
     Texture {
         raw: glow::Texture,
         target: BindTarget,
+        is_external: bool
         //TODO: mip levels, array layers
     },
     Image(ImageBinding),

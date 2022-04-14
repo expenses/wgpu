@@ -72,6 +72,7 @@ impl crate::Api for Api {
     type ShaderModule = ShaderModule;
     type RenderPipeline = RenderPipeline;
     type ComputePipeline = ComputePipeline;
+    type ExternalTexture = ();
 }
 
 struct DebugUtils {
