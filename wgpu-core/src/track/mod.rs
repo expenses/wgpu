@@ -555,6 +555,7 @@ pub enum UsageConflict {
 pub(crate) struct TrackerSet {
     pub buffers: ResourceTracker<BufferState>,
     pub textures: ResourceTracker<TextureState>,
+    pub external_textures: ResourceTracker<PhantomData<id::ExternalTextureId>>,
     pub views: ResourceTracker<PhantomData<id::TextureViewId>>,
     pub bind_groups: ResourceTracker<PhantomData<id::BindGroupId>>,
     pub samplers: ResourceTracker<PhantomData<id::SamplerId>>,
@@ -570,6 +571,7 @@ impl TrackerSet {
         Self {
             buffers: ResourceTracker::new(backend),
             textures: ResourceTracker::new(backend),
+            external_textures: ResourceTracker::new(backend),
             views: ResourceTracker::new(backend),
             bind_groups: ResourceTracker::new(backend),
             samplers: ResourceTracker::new(backend),

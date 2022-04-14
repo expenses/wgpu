@@ -560,9 +560,12 @@ impl crate::CommandEncoder<super::Api> for super::CommandEncoder {
                     dirty_samplers |= 1 << slot;
                     self.state.samplers[slot as usize] = Some(sampler);
                 }
-                super::RawBinding::Texture { raw, target } => {
+                super::RawBinding::Texture { raw, target, is_external } => {
                     dirty_textures |= 1 << slot;
                     self.state.texture_slots[slot as usize].tex_target = target;
+                    if is_external {
+                        self.state.texture_slots[slot as usize].sampler_index = None;
+                    }
                     self.cmd_buffer.commands.push(C::BindTexture {
                         slot,
                         texture: raw,

@@ -35,6 +35,7 @@ impl crate::Api for Api {
     type ShaderModule = Resource;
     type RenderPipeline = Resource;
     type ComputePipeline = Resource;
+    type ExternalTexture = ();
 }
 
 impl crate::Instance<Api> for Context {

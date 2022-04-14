@@ -424,6 +424,7 @@ impl Resource {
                 let view_dimension = match entry.ty {
                     BindingType::Texture { view_dimension, .. }
                     | BindingType::StorageTexture { view_dimension, .. } => view_dimension,
+                    | BindingType::ExternalTexture => return Ok(()),
                     _ => {
                         return Err(BindingError::WrongTextureViewDimension {
                             dim,

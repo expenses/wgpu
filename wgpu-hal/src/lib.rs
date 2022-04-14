@@ -56,7 +56,7 @@ compile_error!("DX12 API enabled on non-Windows OS. If your project is not using
 mod dx12;
 mod empty;
 #[cfg(all(feature = "gles"))]
-mod gles;
+pub mod gles;
 #[cfg(all(feature = "metal"))]
 mod metal;
 #[cfg(feature = "vulkan")]
@@ -160,6 +160,7 @@ pub trait Api: Clone + Sized {
     type Sampler: fmt::Debug + Send + Sync;
     type QuerySet: fmt::Debug + Send + Sync;
     type Fence: fmt::Debug + Send + Sync;
+    type ExternalTexture: fmt::Debug + Send + Sync;
 
     type BindGroupLayout: Send + Sync;
     type BindGroup: fmt::Debug + Send + Sync;
@@ -882,6 +883,7 @@ pub struct BindGroupDescriptor<'a, A: Api> {
     pub samplers: &'a [&'a A::Sampler],
     pub textures: &'a [TextureBinding<'a, A>],
     pub entries: &'a [BindGroupEntry],
+    pub external_textures: &'a [&'a A::ExternalTexture],
 }
 
 #[derive(Clone, Debug)]

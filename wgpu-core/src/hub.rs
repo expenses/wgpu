@@ -5,7 +5,9 @@ use crate::{
     id,
     instance::{Adapter, HalSurface, Instance, Surface},
     pipeline::{ComputePipeline, RenderPipeline, ShaderModule},
-    resource::{Buffer, QuerySet, Sampler, Texture, TextureView},
+    resource::{
+        Buffer, ExternalTexture, QuerySet, Sampler, Texture, TextureView,
+    },
     Epoch, Index,
 };
 
@@ -296,6 +298,11 @@ impl<A: hal::Api> Access<Sampler<A>> for Root {}
 impl<A: hal::Api> Access<Sampler<A>> for Device<A> {}
 impl<A: hal::Api> Access<Sampler<A>> for TextureView<A> {}
 
+impl<A: hal::Api> Access<ExternalTexture<A>> for Sampler<A> {}
+impl<A: hal::Api> Access<ExternalTexture<A>> for Root {}
+impl<A: hal::Api> Access<ExternalTexture<A>> for Device<A> {}
+impl<A: hal::Api> Access<ExternalTexture<A>> for Texture<A> {}
+
 #[cfg(debug_assertions)]
 thread_local! {
     static ACTIVE_TOKEN: Cell<u8> = Cell::new(0);
@@ -391,6 +398,7 @@ pub trait GlobalIdentityHandlerFactory:
     + IdentityHandlerFactory<id::TextureViewId>
     + IdentityHandlerFactory<id::SamplerId>
     + IdentityHandlerFactory<id::SurfaceId>
+    + IdentityHandlerFactory<id::ExternalTextureId>
 {
 }
 
@@ -577,6 +585,7 @@ pub struct Hub<A: hal::Api, F: GlobalIdentityHandlerFactory> {
     pub textures: Registry<Texture<A>, id::TextureId, F>,
     pub texture_views: Registry<TextureView<A>, id::TextureViewId, F>,
     pub samplers: Registry<Sampler<A>, id::SamplerId, F>,
+    pub external_textures: Registry<ExternalTexture<A>, id::ExternalTextureId, F>,
 }
 
 impl<A: HalApi, F: GlobalIdentityHandlerFactory> Hub<A, F> {
@@ -597,6 +606,7 @@ impl<A: HalApi, F: GlobalIdentityHandlerFactory> Hub<A, F> {
             textures: Registry::new(A::VARIANT, factory),
             texture_views: Registry::new(A::VARIANT, factory),
             samplers: Registry::new(A::VARIANT, factory),
+            external_textures: Registry::new(A::VARIANT, factory),
         }
     }
 
@@ -1015,7 +1025,7 @@ impl HalApi for hal::api::Dx11 {
 }
 */
 
-#[cfg(gl)]
+//#[cfg(gl)]
 impl HalApi for hal::api::Gles {
     const VARIANT: Backend = Backend::Gl;
     fn create_instance_from_hal(name: &str, hal_instance: Self::Instance) -> Instance {

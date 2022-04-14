@@ -178,6 +178,27 @@ impl<A: hal::Api> TextureInner<A> {
     }
 }
 
+
+#[derive(Debug)]
+pub struct ExternalTexture<A: hal::Api> {
+    pub(crate) inner: A::ExternalTexture,
+    pub(crate) life_guard: LifeGuard,
+}
+
+impl<A: hal::Api> Resource for ExternalTexture<A> {
+    const TYPE: &'static str = "ExternalTexture";
+
+    fn life_guard(&self) -> &LifeGuard {
+        &self.life_guard
+    }
+}
+
+impl<A: hal::Api> Borrow<()> for ExternalTexture<A> {
+    fn borrow(&self) -> &() {
+        &DUMMY_SELECTOR
+    }
+}
+
 #[derive(Debug)]
 pub struct Texture<A: hal::Api> {
     pub(crate) inner: TextureInner<A>,

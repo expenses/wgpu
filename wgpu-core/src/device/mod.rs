@@ -1193,7 +1193,7 @@ impl<A: HalApi> Device<A> {
                     Some(wgt::Features::TEXTURE_BINDING_ARRAY),
                     WritableStorage::No,
                 ),
-                Bt::Texture { .. } => (
+                Bt::Texture { .. } | Bt::ExternalTexture => (
                     Some(wgt::Features::TEXTURE_BINDING_ARRAY),
                     WritableStorage::No,
                 ),
@@ -1511,7 +1511,8 @@ impl<A: HalApi> Device<A> {
         let (buffer_guard, mut token) = hub.buffers.read(token);
         let (texture_guard, mut token) = hub.textures.read(&mut token); //skip token
         let (texture_view_guard, mut token) = hub.texture_views.read(&mut token);
-        let (sampler_guard, _) = hub.samplers.read(&mut token);
+        let (sampler_guard, mut token) = hub.samplers.read(&mut token);
+        let (external_texture_guard, _) = hub.external_textures.read(&mut token);
 
         let mut used_buffer_ranges = Vec::new();
         let mut used_texture_ranges = Vec::new();
@@ -1519,6 +1520,7 @@ impl<A: HalApi> Device<A> {
         let mut hal_buffers = Vec::new();
         let mut hal_samplers = Vec::new();
         let mut hal_textures = Vec::new();
+        let mut hal_external_textures = Vec::new();
         for entry in desc.entries.iter() {
             let binding = entry.binding;
             // Find the corresponding declaration in the layout
@@ -1681,6 +1683,16 @@ impl<A: HalApi> Device<A> {
 
                     (res_index, num_bindings)
                 }
+                Br::ExternalTexture(id) => {
+                    let ext = used
+                        .external_textures
+                        .use_extend(&*external_texture_guard, id, (), ())
+                        .unwrap();
+
+                    let res_index = hal_external_textures.len();
+                    hal_external_textures.push(&ext.inner);
+                    (res_index, 1)
+                }
             };
 
             hal_entries.push(hal::BindGroupEntry {
@@ -1704,6 +1716,7 @@ impl<A: HalApi> Device<A> {
             buffers: &hal_buffers,
             samplers: &hal_samplers,
             textures: &hal_textures,
+            external_textures: &hal_external_textures,
         };
         let raw = unsafe {
             self.raw
@@ -3626,6 +3639,26 @@ impl<G: GlobalIdentityHandlerFactory> Global<G> {
             .suspected_resources
             .samplers
             .push(id::Valid(sampler_id));
+    }
+
+    pub fn device_create_external_texture<A: HalApi>(
+        &self,
+        label: Option<&str>,
+        external_texture: A::ExternalTexture,
+        id_in: Input<G, id::ExternalTextureId>,
+    ) -> id::ExternalTextureId {
+        let mut token = Token::root();
+        let hub = A::hub(self);
+        let fid = hub.external_textures.prepare(id_in);
+
+        let id = fid.assign(
+            crate::resource::ExternalTexture {
+                inner: external_texture,
+                life_guard: LifeGuard::new("<ExternalTexture>"),
+            },
+            &mut token,
+        );
+        return id.0;
     }
 
     pub fn device_create_bind_group_layout<A: HalApi>(

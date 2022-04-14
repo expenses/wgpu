@@ -123,7 +123,6 @@ impl Context {
         }
     }
 
-    #[cfg(not(target_arch = "wasm32"))]
     pub unsafe fn device_as_hal<A: wgc::hub::HalApi, F: FnOnce(Option<&A::Device>) -> R, R>(
         &self,
         device: &Device,
@@ -712,6 +711,12 @@ pub struct Surface {
 }
 
 #[derive(Debug)]
+pub struct ExternalTexture {
+    id: wgc::id::ExternalTextureId,
+    error_sink: ErrorSink,
+}
+
+#[derive(Debug)]
 pub struct Device {
     id: wgc::id::DeviceId,
     error_sink: ErrorSink,
@@ -759,6 +764,7 @@ impl crate::Context for Context {
     type RenderBundleEncoderId = wgc::command::RenderBundleEncoder;
     type RenderBundleId = wgc::id::RenderBundleId;
     type SurfaceId = Surface;
+    type ExternalTextureId = ExternalTexture;
 
     type SurfaceOutputDetail = SurfaceOutputDetail;
 
@@ -1107,6 +1113,68 @@ impl crate::Context for Context {
         id
     }
 
+    fn device_create_external_texture(
+        &self,
+        device: &Self::DeviceId,
+        label: Label,
+        external_texture: Box<dyn std::any::Any>,
+    ) -> Self::ExternalTextureId {
+        let global = &self.0;
+
+        let id = match device.id.backend() {
+            #[cfg(any(
+                all(
+                    not(target_arch = "wasm32"),
+                    not(target_os = "ios"),
+                    not(target_os = "macos")
+                ),
+                feature = "vulkan-portability"
+            ))]
+            wgt::Backend::Vulkan => global.device_create_external_texture::<hal::api::Vulkan>(
+                label,
+                *external_texture.downcast::<<hal::api::Vulkan as hal::Api>::ExternalTexture>().unwrap(),
+                PhantomData,
+            ),
+            #[cfg(all(
+                not(target_arch = "wasm32"),
+                any(target_os = "ios", target_os = "macos")
+            ))]
+            wgt::Backend::Metal => global.device_create_external_texture::<hal::api::Metal>(
+                label,
+                external_texture,
+                PhantomData,
+            ),
+            #[cfg(all(not(target_arch = "wasm32"), windows))]
+            wgt::Backend::Dx12 => global.device_create_external_texture::<hal::api::Dx12>(
+                label,
+                external_texture,
+                PhantomData,
+            ),
+            #[cfg(all(not(target_arch = "wasm32"), windows))]
+            wgt::Backend::Dx11 => global.device_create_external_texture::<hal::api::Dx11>(
+                label,
+                external_texture,
+                PhantomData,
+            ),
+            #[cfg(any(
+                all(unix, not(target_os = "macos"), not(target_os = "ios")),
+                feature = "angle",
+                target_arch = "wasm32"
+            ))]
+            wgt::Backend::Gl => global.device_create_external_texture::<hal::api::Gles>(
+                label,
+                *external_texture.downcast::<<hal::api::Gles as hal::Api>::ExternalTexture>().unwrap(),
+                PhantomData,
+            ),
+            other => panic!("Unexpected backend {:?}", other),
+        };
+
+        ExternalTexture {
+            id,
+            error_sink: Arc::clone(&device.error_sink),
+        }
+    }
+
     fn device_create_bind_group(
         &self,
         device: &Self::DeviceId,
@@ -1180,6 +1248,9 @@ impl crate::Context for Context {
                         remaining_arrayed_texture_views =
                             &remaining_arrayed_texture_views[array.len()..];
                         bm::BindingResource::TextureViewArray(Borrowed(slice))
+                    }
+                    BindingResource::ExternalTexture(ext) => {
+                        bm::BindingResource::ExternalTexture(ext.id.id)
                     }
                 },
             })
