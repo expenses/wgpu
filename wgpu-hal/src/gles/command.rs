@@ -426,7 +426,7 @@ impl crate::CommandEncoder<super::Api> for super::CommandEncoder {
                 });
 
         if rendering_to_raw_framebuffer && desc.color_attachments.len() != 1 {
-            panic!("Multiple render attachments with raw framebuffers are not supported yet.");
+            panic!("Multiple render attachments with raw framebuffers are not supported.");
         }
 
         match desc
