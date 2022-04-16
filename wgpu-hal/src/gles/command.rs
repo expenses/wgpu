@@ -430,10 +430,21 @@ impl crate::CommandEncoder<super::Api> for super::CommandEncoder {
             }
         }
 
+        /*
+        let mut buffer_indices = ArrayVec::new();
+
+        for (i, cat) in desc.color_attachments.iter().enumerate() {
+            let is_fb = matches!(cat.target.view.inner, super::TextureInner::Framebuffer { ..});
+
+            if !is_fb {
+                buffer_indices.push(i as u8);
+            }
+        }
+
         // set the draw buffers and states
         self.cmd_buffer
             .commands
-            .push(C::SetDrawColorBuffers(desc.color_attachments.len() as u8));
+            .push(C::SetDrawColorBuffers(buffer_indices));*/
         let rect = crate::Rect {
             x: 0,
             y: 0,
@@ -449,25 +460,35 @@ impl crate::CommandEncoder<super::Api> for super::CommandEncoder {
         // issue the clears
         for (i, cat) in desc.color_attachments.iter().enumerate() {
             if !cat.ops.contains(crate::AttachmentOps::LOAD) {
+                let is_fb = matches!(cat.target.view.inner, super::TextureInner::Framebuffer { ..});
+
                 let c = &cat.clear_value;
-                self.cmd_buffer
-                    .commands
-                    .push(match cat.target.view.sample_type {
-                        wgt::TextureSampleType::Float { .. } => C::ClearColorF {
-                            draw_buffer: i as u32,
-                            color: [c.r as f32, c.g as f32, c.b as f32, c.a as f32],
-                            is_srgb: cat.target.view.format.describe().srgb,
-                        },
-                        wgt::TextureSampleType::Depth => unimplemented!(),
-                        wgt::TextureSampleType::Uint => C::ClearColorU(
-                            i as u32,
-                            [c.r as u32, c.g as u32, c.b as u32, c.a as u32],
-                        ),
-                        wgt::TextureSampleType::Sint => C::ClearColorI(
-                            i as u32,
-                            [c.r as i32, c.g as i32, c.b as i32, c.a as i32],
-                        ),
-                    });
+
+                if is_fb {
+                    self.cmd_buffer.commands.push(C::ClearColorRaw {
+                        color: [c.r as f32, c.g as f32, c.b as f32, c.a as f32]
+                    })
+                    } else {
+
+                        self.cmd_buffer
+                        .commands
+                        .push(match cat.target.view.sample_type {
+                            wgt::TextureSampleType::Float { .. } => C::ClearColorF {
+                                draw_buffer: i as u32,
+                                color: [c.r as f32, c.g as f32, c.b as f32, c.a as f32],
+                                is_srgb: cat.target.view.format.describe().srgb,
+                            },
+                            wgt::TextureSampleType::Depth => unimplemented!(),
+                            wgt::TextureSampleType::Uint => C::ClearColorU(
+                                i as u32,
+                                [c.r as u32, c.g as u32, c.b as u32, c.a as u32],
+                            ),
+                            wgt::TextureSampleType::Sint => C::ClearColorI(
+                                i as u32,
+                                [c.r as i32, c.g as i32, c.b as i32, c.a as i32],
+                            ),
+                        });
+                    }
             }
         }
         if let Some(ref dsat) = desc.depth_stencil_attachment {

@@ -94,7 +94,6 @@ impl Context {
         Ok((device, device_id))
     }
 
-    #[cfg(not(target_arch = "wasm32"))]
     pub unsafe fn create_texture_from_hal<A: wgc::hub::HalApi>(
         &self,
         hal_texture: A::Texture,
