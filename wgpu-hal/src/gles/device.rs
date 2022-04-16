@@ -665,6 +665,8 @@ impl crate::Device<super::Api> for super::Device {
             super::TextureInner::Texture { raw, .. } => {
                 gl.delete_texture(raw);
             }
+            #[cfg(target_arch = "wasm32")]
+            super::TextureInner::RawFramebuffer { .. } => {}
         }
     }
 

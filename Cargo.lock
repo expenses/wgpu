@@ -661,9 +661,8 @@ checksum = "f43e957e744be03f5801a55472f593d43fabdebf25a4585db250f04d86b1675f"
 
 [[package]]
 name = "glow"
-version = "0.11.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4c07210904884e8e2e6a2d7f36f39040a9cefe3b379b721969b5275e9f5b464a"
+version = "0.11.2"
+source = "git+https://github.com/expenses/glow?branch=web-sys-bind-raw-framebuffer#1322c5e2a41cc3ce65c1d9c164ce6604f9101d57"
 dependencies = [
  "js-sys",
  "slotmap",
