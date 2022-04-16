@@ -168,10 +168,10 @@ impl Default for VertexAttribKind {
 }
 
 #[derive(Clone, Debug)]
-struct TextureFormatDesc {
-    internal: u32,
-    external: u32,
-    data_type: u32,
+pub struct TextureFormatDesc {
+    pub internal: u32,
+    pub external: u32,
+    pub data_type: u32,
 }
 
 struct AdapterShared {
@@ -226,7 +226,7 @@ unsafe impl Sync for Buffer {}
 unsafe impl Send for Buffer {}
 
 #[derive(Clone, Debug)]
-enum TextureInner {
+pub enum TextureInner {
     Renderbuffer {
         raw: glow::Renderbuffer,
     },
@@ -234,7 +234,14 @@ enum TextureInner {
         raw: glow::Texture,
         target: BindTarget,
     },
+    RawFramebuffer {
+        inner: web_sys::WebGlFramebuffer,
+    },
 }
+
+// Needed because of the RawFramebuffer. Should be safe as wasm is (currently?) single threaded.
+unsafe impl Send for TextureInner {}
+unsafe impl Sync for TextureInner {}
 
 impl TextureInner {
     fn as_native(&self) -> (glow::Texture, BindTarget) {
@@ -242,6 +249,7 @@ impl TextureInner {
             Self::Renderbuffer { .. } => {
                 panic!("Unexpected renderbuffer");
             }
+            Self::RawFramebuffer { .. } => panic!("Unexpected raw framebuffer"),
             Self::Texture { raw, target } => (raw, target),
         }
     }
@@ -249,13 +257,13 @@ impl TextureInner {
 
 #[derive(Debug)]
 pub struct Texture {
-    inner: TextureInner,
-    mip_level_count: u32,
-    array_layer_count: u32,
-    format: wgt::TextureFormat,
+    pub inner: TextureInner,
+    pub mip_level_count: u32,
+    pub array_layer_count: u32,
+    pub format: wgt::TextureFormat,
     #[allow(unused)]
-    format_desc: TextureFormatDesc,
-    copy_size: crate::CopyExtent,
+    pub format_desc: TextureFormatDesc,
+    pub copy_size: crate::CopyExtent,
 }
 
 #[derive(Clone, Debug)]
