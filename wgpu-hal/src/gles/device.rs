@@ -658,7 +658,7 @@ impl crate::Device<super::Api> for super::Device {
             super::TextureInner::Texture { raw, .. } => {
                 gl.delete_texture(raw);
             }
-            super::TextureInner::Framebuffer { ..} => {}
+            super::TextureInner::RawFramebuffer { .. } => {}
         }
     }
 
@@ -890,9 +890,9 @@ impl crate::Device<super::Api> for super::Device {
                             "This is an implementation problem of wgpu-hal/gles backend.")
                     }
                     match view.inner {
-                        super::TextureInner::Framebuffer { .. } => {
-                            panic!("unable to use a framebuffer in a group")
-                        },
+                        super::TextureInner::RawFramebuffer { .. } => {
+                            panic!("unable to use a raw framebuffer in a group")
+                        }
                         super::TextureInner::Renderbuffer { .. } => {
                             panic!("Unable to use a renderbuffer in a group")
                         }
@@ -909,8 +909,8 @@ impl crate::Device<super::Api> for super::Device {
                     let view = desc.textures[entry.resource_index as usize].view;
                     let format_desc = self.shared.describe_texture_format(format);
                     match view.inner {
-                        super::TextureInner::Framebuffer { .. } => {
-                            panic!("unable to use a framebuffer in a group")
+                        super::TextureInner::RawFramebuffer { .. } => {
+                            panic!("unable to use a raw framebuffer in a group")
                         }
                         super::TextureInner::Renderbuffer { .. } => {
                             panic!("Unable to use a renderbuffer in a group")

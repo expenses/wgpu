@@ -563,7 +563,7 @@ impl crate::Adapter<super::Api> for super::Adapter {
                 shader_clear_program_color_uniform_location,
                 zero_buffer,
                 temp_query_results: Vec::new(),
-                draw_buffer_count: arrayvec::ArrayVec::new(),
+                draw_buffer_count: 1,
                 current_index_buffer: None,
             },
         })

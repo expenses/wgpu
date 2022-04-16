@@ -47,13 +47,13 @@ impl super::Queue {
         gl.draw_arrays(glow::TRIANGLES, 0, 3);
 
         // Reset the draw buffers to what they were before the clear
-        let indices = self.draw_buffer_count.iter().cloned()
-        .map(|i| glow::COLOR_ATTACHMENT0 + i as u32)
-        .collect::<ArrayVec<_, { crate::MAX_COLOR_TARGETS }>>();
+        let indices = (0..self.draw_buffer_count as u32)
+            .map(|i| glow::COLOR_ATTACHMENT0 + i)
+            .collect::<ArrayVec<_, { crate::MAX_COLOR_TARGETS }>>();
         gl.draw_buffers(&indices);
         #[cfg(not(target_arch = "wasm32"))]
-        for draw_buffer in self.draw_buffer_count {
-            gl.disable_draw_buffer(glow::BLEND, draw_buffer as u32);
+        for draw_buffer in 0..self.draw_buffer_count as u32 {
+            gl.disable_draw_buffer(glow::BLEND, draw_buffer);
         }
     }
 
@@ -108,8 +108,8 @@ impl super::Queue {
                         view.mip_levels.start as i32,
                     );
                 }
-            },
-            super::TextureInner::Framebuffer { inner } => {
+            }
+            super::TextureInner::RawFramebuffer { inner } => {
                 gl.bind_raw_framebuffer(glow::FRAMEBUFFER, &inner);
             }
         }
@@ -122,8 +122,6 @@ impl super::Queue {
         #[cfg_attr(target_arch = "wasm32", allow(unused))] data_bytes: &[u8],
         queries: &[glow::Query],
     ) {
-        //log::warn!("{:?}", command);
-
         match *command {
             C::Draw {
                 topology,
@@ -700,10 +698,10 @@ impl super::Queue {
             C::InvalidateAttachments(ref list) => {
                 gl.invalidate_framebuffer(glow::DRAW_FRAMEBUFFER, list);
             }
-            C::SetDrawColorBuffers(ref buffer_indices) => {
-                self.draw_buffer_count = buffer_indices.clone();
-                let indices = buffer_indices.iter().cloned()
-                    .map(|i| glow::COLOR_ATTACHMENT0 + i as u32)
+            C::SetDrawColorBuffers(count) => {
+                self.draw_buffer_count = count;
+                let indices = (0..count as u32)
+                    .map(|i| glow::COLOR_ATTACHMENT0 + i)
                     .collect::<ArrayVec<_, { crate::MAX_COLOR_TARGETS }>>();
                 gl.draw_buffers(&indices);
 
@@ -712,15 +710,10 @@ impl super::Queue {
                     .private_caps
                     .contains(super::PrivateCapabilities::CAN_DISABLE_DRAW_BUFFER)
                 {
-                    for draw_buffer in buffer_indices.clone() {
-                        gl.disable_draw_buffer(glow::BLEND, draw_buffer as u32);
+                    for draw_buffer in 0..count as u32 {
+                        gl.disable_draw_buffer(glow::BLEND, draw_buffer);
                     }
                 }
-            }
-            C::ClearColorRaw { ref color } => {
-                gl.clear_color(color[0], color[1], color[2], color[3]);
-                gl.clear_depth_f32(1.0);
-                gl.clear(glow::COLOR_BUFFER_BIT | glow::DEPTH_BUFFER_BIT);
             }
             C::ClearColorF {
                 draw_buffer,

@@ -206,7 +206,7 @@ pub struct Queue {
     /// zeroes by copying from it.
     zero_buffer: glow::Buffer,
     temp_query_results: Vec<u64>,
-    draw_buffer_count: ArrayVec<u8, { crate::MAX_COLOR_TARGETS }>,
+    draw_buffer_count: u8,
     current_index_buffer: Option<glow::Buffer>,
 }
 
@@ -234,11 +234,12 @@ pub enum TextureInner {
         raw: glow::Texture,
         target: BindTarget,
     },
-    Framebuffer {
-        inner: web_sys::WebGlFramebuffer
-    }
+    RawFramebuffer {
+        inner: web_sys::WebGlFramebuffer,
+    },
 }
 
+// Needed because of the RawFramebuffer. Should be safe as wasm is (currently?) single threaded.
 unsafe impl Send for TextureInner {}
 unsafe impl Sync for TextureInner {}
 
@@ -247,8 +248,8 @@ impl TextureInner {
         match *self {
             Self::Renderbuffer { .. } => {
                 panic!("Unexpected renderbuffer");
-            },
-            Self::Framebuffer { .. } => panic!("Unexpected framebuffer"),
+            }
+            Self::RawFramebuffer { .. } => panic!("Unexpected raw framebuffer"),
             Self::Texture { raw, target } => (raw, target),
         }
     }
@@ -630,8 +631,7 @@ enum Command {
         size: wgt::Extent3d,
     },
     InvalidateAttachments(InvalidatedAttachments),
-    SetDrawColorBuffers(ArrayVec<u8, { crate::MAX_COLOR_TARGETS }>),
-    ClearColorRaw { color: [f32; 4] },
+    SetDrawColorBuffers(u8),
     ClearColorF {
         draw_buffer: u32,
         color: [f32; 4],
