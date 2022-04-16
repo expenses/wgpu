@@ -417,6 +417,18 @@ impl crate::CommandEncoder<super::Api> for super::CommandEncoder {
             self.state.has_pass_label = true;
         }
 
+        let rendering_to_raw_framebuffer =
+            desc.color_attachments
+                .iter()
+                .any(|at| match &at.target.view.inner {
+                    super::TextureInner::RawFramebuffer { .. } => true,
+                    _ => false,
+                });
+
+        if rendering_to_raw_framebuffer && desc.color_attachments.len() != 1 {
+            panic!("Multiple render attachments with raw framebuffers are not supported yet.");
+        }
+
         match desc
             .color_attachments
             .first()
@@ -476,19 +488,15 @@ impl crate::CommandEncoder<super::Api> for super::CommandEncoder {
                     }
                 }
 
-                // set the draw buffers and states
-                /*self.cmd_buffer
-                .commands
-                .push(C::SetDrawColorBuffers(desc.color_attachments.len() as u8));*/
+                if !rendering_to_raw_framebuffer {
+                    // set the draw buffers and states
+                    self.cmd_buffer
+                        .commands
+                        .push(C::SetDrawColorBuffers(desc.color_attachments.len() as u8));
+                }
             }
         }
 
-        /*
-        // set the draw buffers and states
-        self.cmd_buffer
-            .commands
-            .push(C::SetDrawColorBuffers(desc.color_attachments.len() as u8));
-        */
         let rect = crate::Rect {
             x: 0,
             y: 0,
