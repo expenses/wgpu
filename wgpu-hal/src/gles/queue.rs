@@ -83,37 +83,40 @@ impl super::Queue {
         attachment: u32,
         view: &super::TextureView,
     ) {
-        match view.inner {
+        match &view.inner {
             super::TextureInner::Renderbuffer { raw } => {
-                gl.framebuffer_renderbuffer(fbo_target, attachment, glow::RENDERBUFFER, Some(raw));
+                gl.framebuffer_renderbuffer(fbo_target, attachment, glow::RENDERBUFFER, Some(*raw));
             }
             super::TextureInner::DefaultRenderbuffer => panic!("Unexpected default RBO"),
             super::TextureInner::Texture { raw, target } => {
-                if is_layered_target(target) {
+                if is_layered_target(*target) {
                     gl.framebuffer_texture_layer(
                         fbo_target,
                         attachment,
-                        Some(raw),
+                        Some(*raw),
                         view.mip_levels.start as i32,
                         view.array_layers.start as i32,
                     );
-                } else if target == glow::TEXTURE_CUBE_MAP {
+                } else if *target == glow::TEXTURE_CUBE_MAP {
                     gl.framebuffer_texture_2d(
                         fbo_target,
                         attachment,
                         CUBEMAP_FACES[view.array_layers.start as usize],
-                        Some(raw),
+                        Some(*raw),
                         view.mip_levels.start as i32,
                     );
                 } else {
                     gl.framebuffer_texture_2d(
                         fbo_target,
                         attachment,
-                        target,
-                        Some(raw),
+                        *target,
+                        Some(*raw),
                         view.mip_levels.start as i32,
                     );
                 }
+            }
+            super::TextureInner::RawFramebuffer { inner } => {
+                gl.bind_raw_framebuffer(glow::FRAMEBUFFER, &inner);
             }
         }
     }

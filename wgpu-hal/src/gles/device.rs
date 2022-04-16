@@ -665,6 +665,7 @@ impl crate::Device<super::Api> for super::Device {
             super::TextureInner::Texture { raw, .. } => {
                 gl.delete_texture(raw);
             }
+            super::TextureInner::RawFramebuffer { .. } => {}
         }
     }
 

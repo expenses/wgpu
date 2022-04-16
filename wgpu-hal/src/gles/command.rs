@@ -483,6 +483,12 @@ impl crate::CommandEncoder<super::Api> for super::CommandEncoder {
             }
         }
 
+        /*
+        // set the draw buffers and states
+        self.cmd_buffer
+            .commands
+            .push(C::SetDrawColorBuffers(desc.color_attachments.len() as u8));
+        */
         let rect = crate::Rect {
             x: 0,
             y: 0,
