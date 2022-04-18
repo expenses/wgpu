@@ -116,8 +116,8 @@ impl super::Queue {
                 }
             }
             #[cfg(target_arch = "wasm32")]
-            super::TextureInner::RawFramebuffer { inner } => {
-                gl.bind_raw_framebuffer(glow::FRAMEBUFFER, &inner);
+            super::TextureInner::ExternalFramebuffer { inner } => {
+                gl.bind_external_framebuffer(glow::FRAMEBUFFER, &inner);
             }
         }
     }

@@ -417,16 +417,16 @@ impl crate::CommandEncoder<super::Api> for super::CommandEncoder {
             self.state.has_pass_label = true;
         }
 
-        let rendering_to_raw_framebuffer =
+        let rendering_to_external_framebuffer =
             desc.color_attachments
                 .iter()
                 .any(|at| match &at.target.view.inner {
-                    super::TextureInner::RawFramebuffer { .. } => true,
+                    super::TextureInner::ExternalFramebuffer { .. } => true,
                     _ => false,
                 });
 
-        if rendering_to_raw_framebuffer && desc.color_attachments.len() != 1 {
-            panic!("Multiple render attachments with raw framebuffers are not supported.");
+        if rendering_to_external_framebuffer && desc.color_attachments.len() != 1 {
+            panic!("Multiple render attachments with external framebuffers are not supported.");
         }
 
         match desc
@@ -488,7 +488,7 @@ impl crate::CommandEncoder<super::Api> for super::CommandEncoder {
                     }
                 }
 
-                if !rendering_to_raw_framebuffer {
+                if !rendering_to_external_framebuffer {
                     // set the draw buffers and states
                     self.cmd_buffer
                         .commands
