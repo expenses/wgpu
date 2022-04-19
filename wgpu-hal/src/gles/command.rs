@@ -420,7 +420,7 @@ impl crate::CommandEncoder<super::Api> for super::CommandEncoder {
         let rendering_to_external_framebuffer =
             desc.color_attachments
                 .iter()
-                .any(|at| match &at.target.view.inner {
+                .any(|at| match at.target.view.inner {
                     #[cfg(target_arch = "wasm32")]
                     super::TextureInner::ExternalFramebuffer { .. } => true,
                     _ => false,
