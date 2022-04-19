@@ -197,6 +197,12 @@ pub struct Device {
     render_doc: crate::auxil::renderdoc::RenderDoc,
 }
 
+impl Device {
+    pub fn gl_context(&self) -> &glow::Context {
+        &self.shared.context.glow_context
+    }
+}
+
 pub struct Queue {
     shared: Arc<AdapterShared>,
     features: wgt::Features,
