@@ -115,7 +115,7 @@ impl super::Queue {
                     );
                 }
             }
-            #[cfg(target_arch = "wasm32")]
+            #[cfg(all(target_arch = "wasm32", not(target_os = "emscripten")))]
             super::TextureInner::ExternalFramebuffer { ref inner } => {
                 gl.bind_external_framebuffer(glow::FRAMEBUFFER, inner);
             }

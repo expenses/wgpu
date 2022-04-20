@@ -240,7 +240,7 @@ pub enum TextureInner {
         raw: glow::Texture,
         target: BindTarget,
     },
-    #[cfg(target_arch = "wasm32")]
+    #[cfg(all(target_arch = "wasm32", not(target_os = "emscripten")))]
     ExternalFramebuffer {
         inner: web_sys::WebGlFramebuffer,
     },
@@ -259,7 +259,7 @@ impl TextureInner {
                 panic!("Unexpected renderbuffer");
             }
             Self::Texture { raw, target } => (raw, target),
-            #[cfg(target_arch = "wasm32")]
+            #[cfg(all(target_arch = "wasm32", not(target_os = "emscripten")))]
             Self::ExternalFramebuffer { .. } => panic!("Unexpected external framebuffer"),
         }
     }
