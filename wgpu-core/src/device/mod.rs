@@ -856,10 +856,7 @@ impl<A: HalApi> Device<A> {
             }
             None => match texture.desc.dimension {
                 wgt::TextureDimension::D1 => wgt::TextureViewDimension::D1,
-                wgt::TextureDimension::D2
-                    if texture.desc.size.depth_or_array_layers > 1
-                        && desc.range.array_layer_count.is_none() =>
-                {
+                wgt::TextureDimension::D2 if texture.desc.size.depth_or_array_layers > 1 => {
                     wgt::TextureViewDimension::D2Array
                 }
                 wgt::TextureDimension::D2 => wgt::TextureViewDimension::D2,
@@ -871,7 +868,13 @@ impl<A: HalApi> Device<A> {
             desc.range.base_mip_level + desc.range.mip_level_count.map_or(1, |count| count.get());
         let required_layer_count = match desc.range.array_layer_count {
             Some(count) => desc.range.base_array_layer + count.get(),
-            None => texture.desc.array_layer_count(),
+            None => match view_dim {
+                wgt::TextureViewDimension::D1
+                | wgt::TextureViewDimension::D2
+                | wgt::TextureViewDimension::D3 => 1,
+                wgt::TextureViewDimension::Cube => 6,
+                _ => texture.desc.array_layer_count(),
+            },
         };
         let level_end = texture.full_range.levels.end;
         let layer_end = texture.full_range.layers.end;
@@ -1141,6 +1144,25 @@ impl<A: HalApi> Device<A> {
             Caps::PRIMITIVE_INDEX,
             self.features
                 .contains(wgt::Features::SHADER_PRIMITIVE_INDEX),
+        );
+        caps.set(
+            Caps::SAMPLED_TEXTURE_AND_STORAGE_BUFFER_ARRAY_NON_UNIFORM_INDEXING,
+            self.features.contains(
+                wgt::Features::SAMPLED_TEXTURE_AND_STORAGE_BUFFER_ARRAY_NON_UNIFORM_INDEXING,
+            ),
+        );
+        caps.set(
+            Caps::UNIFORM_BUFFER_AND_STORAGE_TEXTURE_ARRAY_NON_UNIFORM_INDEXING,
+            self.features.contains(
+                wgt::Features::UNIFORM_BUFFER_AND_STORAGE_TEXTURE_ARRAY_NON_UNIFORM_INDEXING,
+            ),
+        );
+        // TODO: This needs a proper wgpu feature
+        caps.set(
+            Caps::SAMPLER_NON_UNIFORM_INDEXING,
+            self.features.contains(
+                wgt::Features::SAMPLED_TEXTURE_AND_STORAGE_BUFFER_ARRAY_NON_UNIFORM_INDEXING,
+            ),
         );
         let info = naga::valid::Validator::new(naga::valid::ValidationFlags::all(), caps)
             .validate(&module)

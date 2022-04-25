@@ -321,15 +321,19 @@ mod pass_impl {
             wgpu_compute_pass_end_pipeline_statistics_query(self)
         }
 
-        fn dispatch(&mut self, x: u32, y: u32, z: u32) {
-            wgpu_compute_pass_dispatch(self, x, y, z)
+        fn dispatch_workgroups(&mut self, x: u32, y: u32, z: u32) {
+            wgpu_compute_pass_dispatch_workgroups(self, x, y, z)
         }
-        fn dispatch_indirect(
+        fn dispatch_workgroups_indirect(
             &mut self,
             indirect_buffer: &super::Buffer,
             indirect_offset: wgt::BufferAddress,
         ) {
-            wgpu_compute_pass_dispatch_indirect(self, indirect_buffer.id, indirect_offset)
+            wgpu_compute_pass_dispatch_workgroups_indirect(
+                self,
+                indirect_buffer.id,
+                indirect_offset,
+            )
         }
     }
 
@@ -1325,8 +1329,8 @@ impl crate::Context for Context {
         ));
         if let Some(cause) = error {
             if let wgc::pipeline::CreateRenderPipelineError::Internal { stage, ref error } = cause {
-                log::warn!("Shader translation error for stage {:?}: {}", stage, error);
-                log::warn!("Please report it to https://github.com/gfx-rs/naga");
+                log::error!("Shader translation error for stage {:?}: {}", stage, error);
+                log::error!("Please report it to https://github.com/gfx-rs/naga");
             }
             self.handle_error(
                 &device.error_sink,
