@@ -69,8 +69,8 @@ trait ComputePassInner<Ctx: Context> {
     fn write_timestamp(&mut self, query_set: &Ctx::QuerySetId, query_index: u32);
     fn begin_pipeline_statistics_query(&mut self, query_set: &Ctx::QuerySetId, query_index: u32);
     fn end_pipeline_statistics_query(&mut self);
-    fn dispatch(&mut self, x: u32, y: u32, z: u32);
-    fn dispatch_indirect(
+    fn dispatch_workgroups(&mut self, x: u32, y: u32, z: u32);
+    fn dispatch_workgroups_indirect(
         &mut self,
         indirect_buffer: &Ctx::BufferId,
         indirect_offset: BufferAddress,
@@ -2772,9 +2772,9 @@ impl<'a> RenderPass<'a> {
     ///
     /// Offset is measured in bytes, but must be a multiple of [`PUSH_CONSTANT_ALIGNMENT`].
     ///
-    /// Data size must be a multiple of 4 and must be aligned to the 4s, so we take an array of u32.
-    /// For example, with an offset of 4 and an array of `[u32; 3]`, that will write to the range
-    /// of 4..16.
+    /// Data size must be a multiple of 4 and must have an alignment of 4.
+    /// For example, with an offset of 4 and an array of `[u8; 8]`, that will write to the range
+    /// of 4..12.
     ///
     /// For each byte in the range of push constant data written, the union of the stages of all push constant
     /// ranges that covers that byte must be exactly `stages`. There's no good way of explaining this simply,
@@ -2881,19 +2881,23 @@ impl<'a> ComputePass<'a> {
     /// Dispatches compute work operations.
     ///
     /// `x`, `y` and `z` denote the number of work groups to dispatch in each dimension.
-    pub fn dispatch(&mut self, x: u32, y: u32, z: u32) {
-        ComputePassInner::dispatch(&mut self.id, x, y, z);
+    pub fn dispatch_workgroups(&mut self, x: u32, y: u32, z: u32) {
+        ComputePassInner::dispatch_workgroups(&mut self.id, x, y, z);
     }
 
     /// Dispatches compute work operations, based on the contents of the `indirect_buffer`.
     ///
     /// The structure expected in `indirect_buffer` must conform to [`DispatchIndirect`](crate::util::DispatchIndirect).
-    pub fn dispatch_indirect(
+    pub fn dispatch_workgroups_indirect(
         &mut self,
         indirect_buffer: &'a Buffer,
         indirect_offset: BufferAddress,
     ) {
-        ComputePassInner::dispatch_indirect(&mut self.id, &indirect_buffer.id, indirect_offset);
+        ComputePassInner::dispatch_workgroups_indirect(
+            &mut self.id,
+            &indirect_buffer.id,
+            indirect_offset,
+        );
     }
 }
 
@@ -2903,9 +2907,9 @@ impl<'a> ComputePass<'a> {
     ///
     /// Offset is measured in bytes, but must be a multiple of [`PUSH_CONSTANT_ALIGNMENT`].
     ///
-    /// Data size must be a multiple of 4 and must be aligned to the 4s, so we take an array of u32.
-    /// For example, with an offset of 4 and an array of `[u32; 3]`, that will write to the range
-    /// of 4..16.
+    /// Data size must be a multiple of 4 and must have an alignment of 4.
+    /// For example, with an offset of 4 and an array of `[u8; 8]`, that will write to the range
+    /// of 4..12.
     pub fn set_push_constants(&mut self, offset: u32, data: &[u8]) {
         self.id.set_push_constants(offset, data);
     }
@@ -3061,9 +3065,9 @@ impl<'a> RenderBundleEncoder<'a> {
     ///
     /// Offset is measured in bytes, but must be a multiple of [`PUSH_CONSTANT_ALIGNMENT`].
     ///
-    /// Data size must be a multiple of 4 and must be aligned to the 4s, so we take an array of u32.
-    /// For example, with an offset of 4 and an array of `[u32; 3]`, that will write to the range
-    /// of 4..16.
+    /// Data size must be a multiple of 4 and must have an alignment of 4.
+    /// For example, with an offset of 4 and an array of `[u8; 8]`, that will write to the range
+    /// of 4..12.
     ///
     /// For each byte in the range of push constant data written, the union of the stages of all push constant
     /// ranges that covers that byte must be exactly `stages`. There's no good way of explaining this simply,

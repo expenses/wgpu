@@ -170,9 +170,6 @@ fn deserialize_features(features: &wgpu_types::Features) -> Vec<&'static str> {
     ) {
         return_features.push("uniform-buffer-and-storage-buffer-texture-non-uniform-indexing");
     }
-    if features.contains(wgpu_types::Features::UNSIZED_BINDING_ARRAY) {
-        return_features.push("unsized-binding-array");
-    }
     if features.contains(wgpu_types::Features::ADDRESS_MODE_CLAMP_TO_BORDER) {
         return_features.push("address-mode-clamp-to-border");
     }
@@ -340,10 +337,6 @@ impl From<GpuRequiredFeatures> for wgpu_types::Features {
             required_features
                 .0
                 .contains("uniform-buffer-and-storage-buffer-texture-non-uniform-indexing"),
-        );
-        features.set(
-            wgpu_types::Features::UNSIZED_BINDING_ARRAY,
-            required_features.0.contains("unsized-binding-array"),
         );
         features.set(
             wgpu_types::Features::ADDRESS_MODE_CLAMP_TO_BORDER,
@@ -575,8 +568,8 @@ fn declare_webgpu_ops() -> Vec<deno_core::OpDecl> {
         render_pass::op_webgpu_render_pass_draw_indexed_indirect::decl(),
         // compute_pass
         compute_pass::op_webgpu_compute_pass_set_pipeline::decl(),
-        compute_pass::op_webgpu_compute_pass_dispatch::decl(),
-        compute_pass::op_webgpu_compute_pass_dispatch_indirect::decl(),
+        compute_pass::op_webgpu_compute_pass_dispatch_workgroups::decl(),
+        compute_pass::op_webgpu_compute_pass_dispatch_workgroups_indirect::decl(),
         compute_pass::op_webgpu_compute_pass_begin_pipeline_statistics_query::decl(),
         compute_pass::op_webgpu_compute_pass_end_pipeline_statistics_query::decl(),
         compute_pass::op_webgpu_compute_pass_write_timestamp::decl(),
