@@ -149,11 +149,12 @@ impl<T, I: id::TypedId> ops::IndexMut<id::Valid<I>> for Storage<T, I> {
 impl<T, I: id::TypedId> Storage<T, I> {
     pub(crate) fn contains(&self, id: I) -> bool {
         let (index, epoch, _) = id.unzip();
-        match self.map[index as usize] {
-            Element::Vacant => false,
-            Element::Occupied(_, storage_epoch) | Element::Error(storage_epoch, ..) => {
-                epoch == storage_epoch
+        match self.map.get(index as usize) {
+            Some(&Element::Vacant) => false,
+            Some(&Element::Occupied(_, storage_epoch) | &Element::Error(storage_epoch, _)) => {
+                storage_epoch == epoch
             }
+            None => false,
         }
     }
 
@@ -161,10 +162,11 @@ impl<T, I: id::TypedId> Storage<T, I> {
     /// Panics if there is an epoch mismatch, or the entry is empty.
     pub(crate) fn get(&self, id: I) -> Result<&T, InvalidId> {
         let (index, epoch, _) = id.unzip();
-        let (result, storage_epoch) = match self.map[index as usize] {
-            Element::Occupied(ref v, epoch) => (Ok(v), epoch),
-            Element::Vacant => panic!("{}[{}] does not exist", self.kind, index),
-            Element::Error(epoch, ..) => (Err(InvalidId), epoch),
+        let (result, storage_epoch) = match self.map.get(index as usize) {
+            Some(&Element::Occupied(ref v, epoch)) => (Ok(v), epoch),
+            Some(&Element::Vacant) => panic!("{}[{}] does not exist", self.kind, index),
+            Some(&Element::Error(epoch, ..)) => (Err(InvalidId), epoch),
+            None => return Err(InvalidId),
         };
         assert_eq!(
             epoch, storage_epoch,
@@ -178,10 +180,11 @@ impl<T, I: id::TypedId> Storage<T, I> {
     /// Panics if there is an epoch mismatch, or the entry is empty.
     pub(crate) fn get_mut(&mut self, id: I) -> Result<&mut T, InvalidId> {
         let (index, epoch, _) = id.unzip();
-        let (result, storage_epoch) = match self.map[index as usize] {
-            Element::Occupied(ref mut v, epoch) => (Ok(v), epoch),
-            Element::Vacant => panic!("{}[{}] does not exist", self.kind, index),
-            Element::Error(epoch, ..) => (Err(InvalidId), epoch),
+        let (result, storage_epoch) = match self.map.get_mut(index as usize) {
+            Some(&mut Element::Occupied(ref mut v, epoch)) => (Ok(v), epoch),
+            Some(&mut Element::Vacant) => panic!("{}[{}] does not exist", self.kind, index),
+            Some(&mut Element::Error(epoch, ..)) => (Err(InvalidId), epoch),
+            None => return Err(InvalidId),
         };
         assert_eq!(
             epoch, storage_epoch,
@@ -193,8 +196,8 @@ impl<T, I: id::TypedId> Storage<T, I> {
 
     pub(crate) fn label_for_invalid_id(&self, id: I) -> &str {
         let (index, _, _) = id.unzip();
-        match self.map[index as usize] {
-            Element::Error(_, ref label) => label,
+        match self.map.get(index as usize) {
+            Some(&Element::Error(_, ref label)) => label,
             _ => "",
         }
     }
@@ -904,6 +907,17 @@ impl<G: GlobalIdentityHandlerFactory> Global<G> {
         }
     }
 
+    /// # Safety
+    ///
+    /// - The raw handle obtained from the hal Instance must not be manually destroyed
+    pub unsafe fn instance_as_hal<A: HalApi, F: FnOnce(Option<&A::Instance>) -> R, R>(
+        &self,
+        hal_instance_callback: F,
+    ) -> R {
+        let hal_instance = A::instance_as_hal(&self.instance);
+        hal_instance_callback(hal_instance)
+    }
+
     pub fn clear_backend<A: HalApi>(&self, _dummy: ()) {
         let mut surface_guard = self.surfaces.data.write();
         let hub = A::hub(self);
@@ -988,6 +1002,7 @@ impl<G: GlobalIdentityHandlerFactory> Drop for Global<G> {
 pub trait HalApi: hal::Api {
     const VARIANT: Backend;
     fn create_instance_from_hal(name: &str, hal_instance: Self::Instance) -> Instance;
+    fn instance_as_hal(instance: &Instance) -> Option<&Self::Instance>;
     fn hub<G: GlobalIdentityHandlerFactory>(global: &Global<G>) -> &Hub<Self, G>;
     fn get_surface(surface: &Surface) -> &HalSurface<Self>;
     fn get_surface_mut(surface: &mut Surface) -> &mut HalSurface<Self>;
@@ -1002,6 +1017,9 @@ impl HalApi for hal::api::Vulkan {
             vulkan: Some(hal_instance),
             ..Default::default()
         }
+    }
+    fn instance_as_hal(instance: &Instance) -> Option<&Self::Instance> {
+        instance.vulkan.as_ref()
     }
     fn hub<G: GlobalIdentityHandlerFactory>(global: &Global<G>) -> &Hub<Self, G> {
         &global.hubs.vulkan
@@ -1024,6 +1042,9 @@ impl HalApi for hal::api::Metal {
             ..Default::default()
         }
     }
+    fn instance_as_hal(instance: &Instance) -> Option<&Self::Instance> {
+        instance.metal.as_ref()
+    }
     fn hub<G: GlobalIdentityHandlerFactory>(global: &Global<G>) -> &Hub<Self, G> {
         &global.hubs.metal
     }
@@ -1044,6 +1065,9 @@ impl HalApi for hal::api::Dx12 {
             dx12: Some(hal_instance),
             ..Default::default()
         }
+    }
+    fn instance_as_hal(instance: &Instance) -> Option<&Self::Instance> {
+        instance.dx12.as_ref()
     }
     fn hub<G: GlobalIdentityHandlerFactory>(global: &Global<G>) -> &Hub<Self, G> {
         &global.hubs.dx12
@@ -1066,6 +1090,9 @@ impl HalApi for hal::api::Dx11 {
             ..Default::default()
         }
     }
+    fn instance_as_hal(instance: &Instance) -> Option<&Self::Instance> {
+        instance.dx11.as_ref()
+    }
     fn hub<G: GlobalIdentityHandlerFactory>(global: &Global<G>) -> &Hub<Self, G> {
         &global.hubs.dx11
     }
@@ -1087,6 +1114,9 @@ impl HalApi for hal::api::Gles {
             gl: Some(hal_instance),
             ..Default::default()
         }
+    }
+    fn instance_as_hal(instance: &Instance) -> Option<&Self::Instance> {
+        instance.gl.as_ref()
     }
     fn hub<G: GlobalIdentityHandlerFactory>(global: &Global<G>) -> &Hub<Self, G> {
         &global.hubs.gl

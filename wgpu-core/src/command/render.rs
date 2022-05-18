@@ -1050,8 +1050,11 @@ impl<G: GlobalIdentityHandlerFactory> Global<G> {
         let (trackers, query_reset_state, pending_discard_init_fixups) = {
             let (mut cmb_guard, mut token) = hub.command_buffers.write(&mut token);
 
-            let cmd_buf = CommandBuffer::get_encoder_mut(&mut *cmb_guard, encoder_id)
-                .map_pass_err(init_scope)?;
+            // Spell out the type, to placate rust-analyzer.
+            // https://github.com/rust-lang/rust-analyzer/issues/12247
+            let cmd_buf: &mut CommandBuffer<A> =
+                CommandBuffer::get_encoder_mut(&mut *cmb_guard, encoder_id)
+                    .map_pass_err(init_scope)?;
             // close everything while the new command encoder is filled
             cmd_buf.encoder.close();
             // will be reset to true if recording is done without errors
@@ -2005,7 +2008,7 @@ pub mod render_ffi {
     };
     use crate::{id, RawString};
     use std::{convert::TryInto, ffi, num::NonZeroU32, slice};
-    use wgt::{BufferAddress, BufferSize, Color, DynamicOffset};
+    use wgt::{BufferAddress, BufferSize, Color, DynamicOffset, IndexFormat};
 
     /// # Safety
     ///
@@ -2066,6 +2069,17 @@ pub mod render_ffi {
             offset,
             size,
         });
+    }
+
+    #[no_mangle]
+    pub extern "C" fn wgpu_render_pass_set_index_buffer(
+        pass: &mut RenderPass,
+        buffer: id::BufferId,
+        index_format: IndexFormat,
+        offset: BufferAddress,
+        size: Option<BufferSize>,
+    ) {
+        pass.set_index_buffer(buffer, index_format, offset, size);
     }
 
     #[no_mangle]

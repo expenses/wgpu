@@ -180,7 +180,7 @@ impl crate::Adapter<super::Api> for super::Adapter {
                 };
                 flags
             }
-            Tf::Depth32Float => {
+            Tf::Depth32Float | Tf::Depth32FloatStencil8 => {
                 let mut flats =
                     Tfc::DEPTH_STENCIL_ATTACHMENT | Tfc::MULTISAMPLE | msaa_resolve_apple3x_if;
                 if pc.format_depth32float_filter {
@@ -202,7 +202,7 @@ impl crate::Adapter<super::Api> for super::Adapter {
                 } else if pc.msaa_desktop {
                     Tfc::SAMPLED_LINEAR
                 } else {
-                    Tfc::STORAGE
+                    Tfc::SAMPLED_LINEAR
                         | Tfc::COLOR_ATTACHMENT
                         | Tfc::COLOR_ATTACHMENT_BLEND
                         | Tfc::MULTISAMPLE
@@ -523,10 +523,7 @@ impl super::PrivateCapabilities {
                 MUTABLE_COMPARISON_SAMPLER_SUPPORT,
             ),
             sampler_clamp_to_border: Self::supports_any(device, SAMPLER_CLAMP_TO_BORDER_SUPPORT),
-            sampler_lod_average: {
-                // TODO: Clarify minimum macOS version with Apple (43707452)
-                version.at_least((10, 13), (9, 0))
-            },
+            sampler_lod_average: { version.at_least((11, 0), (9, 0)) },
             base_instance: Self::supports_any(device, BASE_INSTANCE_SUPPORT),
             base_vertex_instance_drawing: Self::supports_any(device, BASE_VERTEX_INSTANCE_SUPPORT),
             dual_source_blending: Self::supports_any(device, DUAL_SOURCE_BLEND_SUPPORT),
@@ -751,7 +748,9 @@ impl super::PrivateCapabilities {
             | F::PUSH_CONSTANTS
             | F::POLYGON_MODE_LINE
             | F::CLEAR_TEXTURE
-            | F::TEXTURE_FORMAT_16BIT_NORM;
+            | F::TEXTURE_FORMAT_16BIT_NORM
+            | F::SHADER_FLOAT16
+            | F::DEPTH32FLOAT_STENCIL8;
 
         features.set(F::TEXTURE_COMPRESSION_ASTC_LDR, self.format_astc);
         features.set(F::TEXTURE_COMPRESSION_ASTC_HDR, self.format_astc_hdr);
@@ -891,6 +890,7 @@ impl super::PrivateCapabilities {
             Tf::Rgba32Sint => RGBA32Sint,
             Tf::Rgba32Float => RGBA32Float,
             Tf::Depth32Float => Depth32Float,
+            Tf::Depth32FloatStencil8 => Depth32Float_Stencil8,
             Tf::Depth24Plus => {
                 if self.format_depth24_stencil8 {
                     Depth24Unorm_Stencil8

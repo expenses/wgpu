@@ -128,6 +128,9 @@ fn deserialize_features(features: &wgpu_types::Features) -> Vec<&'static str> {
     if features.contains(wgpu_types::Features::DEPTH_CLIP_CONTROL) {
         return_features.push("depth-clip-control");
     }
+    if features.contains(wgpu_types::Features::DEPTH32FLOAT_STENCIL8) {
+        return_features.push("depth32float-stencil8");
+    }
     if features.contains(wgpu_types::Features::PIPELINE_STATISTICS_QUERY) {
         return_features.push("pipeline-statistics-query");
     }
@@ -145,6 +148,9 @@ fn deserialize_features(features: &wgpu_types::Features) -> Vec<&'static str> {
     }
     if features.contains(wgpu_types::Features::INDIRECT_FIRST_INSTANCE) {
         return_features.push("indirect-first-instance");
+    }
+    if features.contains(wgpu_types::Features::SHADER_FLOAT16) {
+        return_features.push("shader-f16")
     }
 
     // extended from spec
@@ -283,6 +289,10 @@ impl From<GpuRequiredFeatures> for wgpu_types::Features {
             required_features.0.contains("depth-clip-control"),
         );
         features.set(
+            wgpu_types::Features::DEPTH32FLOAT_STENCIL8,
+            required_features.0.contains("depth32float-stencil8"),
+        );
+        features.set(
             wgpu_types::Features::PIPELINE_STATISTICS_QUERY,
             required_features.0.contains("pipeline-statistics-query"),
         );
@@ -305,6 +315,10 @@ impl From<GpuRequiredFeatures> for wgpu_types::Features {
         features.set(
             wgpu_types::Features::INDIRECT_FIRST_INSTANCE,
             required_features.0.contains("indirect-first-instance"),
+        );
+        features.set(
+            wgpu_types::Features::SHADER_FLOAT16,
+            required_features.0.contains("shader-f16"),
         );
 
         // extended from spec
