@@ -89,7 +89,17 @@ impl super::Queue {
             }
             super::TextureInner::DefaultRenderbuffer => panic!("Unexpected default RBO"),
             super::TextureInner::Texture { raw, target } => {
-                if is_layered_target(target) {
+                let num_layers = view.array_layers.end - view.array_layers.start;
+                if num_layers > 1 {
+                    gl.framebuffer_texture_multiview_ovr(
+                        fbo_target,
+                        attachment,
+                        Some(raw),
+                        view.mip_levels.start as i32,
+                        view.array_layers.start as i32,
+                        num_layers as i32,
+                    );
+                } else if is_layered_target(target) {
                     gl.framebuffer_texture_layer(
                         fbo_target,
                         attachment,
