@@ -151,6 +151,7 @@ impl super::Device {
             &shader.info,
             &context.layout.naga_options,
             &pipeline_options,
+            Default::default()
         )
         .map_err(|e| {
             let msg = format!("{}", e);
