@@ -5,15 +5,13 @@ use crate::{
     binding_model::{LateMinBufferBindingSizeMismatch, PushConstantUploadError},
     error::ErrorFormatter,
     id,
-    track::UseExtendError,
+    track::UsageConflict,
     validation::{MissingBufferUsageError, MissingTextureUsageError},
 };
 use wgt::{BufferAddress, BufferSize, Color};
 
 use std::num::NonZeroU32;
 use thiserror::Error;
-
-pub type BufferError = UseExtendError<hal::BufferUses>;
 
 /// Error validating a draw call.
 #[derive(Clone, Debug, Error, PartialEq)]
@@ -79,8 +77,8 @@ pub enum RenderCommandError {
     IncompatiblePipelineTargets(#[from] crate::device::RenderPassCompatibilityError),
     #[error("pipeline writes to depth/stencil, while the pass has read-only depth/stencil")]
     IncompatiblePipelineRods,
-    #[error("buffer {0:?} is in error {1:?}")]
-    Buffer(id::BufferId, BufferError),
+    #[error(transparent)]
+    UsageConflict(#[from] UsageConflict),
     #[error("buffer {0:?} is destroyed")]
     DestroyedBuffer(id::BufferId),
     #[error(transparent)]
@@ -89,10 +87,12 @@ pub enum RenderCommandError {
     MissingTextureUsage(#[from] MissingTextureUsageError),
     #[error(transparent)]
     PushConstants(#[from] PushConstantUploadError),
-    #[error("Invalid Viewport parameters")]
-    InvalidViewport,
-    #[error("Invalid ScissorRect parameters")]
-    InvalidScissorRect,
+    #[error("Viewport width {0} and/or height {1} are less than or equal to 0")]
+    InvalidViewportDimension(f32, f32),
+    #[error("Viewport minDepth {0} and/or maxDepth {1} are not in [0, 1]")]
+    InvalidViewportDepth(f32, f32),
+    #[error("Scissor {0:?} is not contained in the render target {1:?}")]
+    InvalidScissorRect(Rect<u32>, wgt::Extent3d),
     #[error("Support for {0} is not implemented yet")]
     Unimplemented(&'static str),
 }
@@ -106,7 +106,11 @@ impl crate::error::PrettyError for RenderCommandError {
             Self::InvalidPipeline(id) => {
                 fmt.render_pipeline_label(&id);
             }
-            Self::Buffer(id, ..) | Self::DestroyedBuffer(id) => {
+            Self::UsageConflict(UsageConflict::TextureInvalid { id }) => {
+                fmt.texture_label(&id);
+            }
+            Self::UsageConflict(UsageConflict::BufferInvalid { id })
+            | Self::DestroyedBuffer(id) => {
                 fmt.buffer_label(&id);
             }
             _ => {}
