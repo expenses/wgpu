@@ -213,7 +213,7 @@ impl super::Device {
         // Create empty fragment shader if only vertex shader is present
         if has_stages == wgt::ShaderStages::VERTEX {
             let version = match self.shared.shading_language_version {
-                naga::back::glsl::Version::Embedded(v) => v,
+                naga::back::glsl::Version::Embedded { version, .. } => version,
                 naga::back::glsl::Version::Desktop(_) => unreachable!(),
             };
             let shader_src = format!("#version {} es \n void main(void) {{}}", version,);
