@@ -346,20 +346,10 @@ impl super::Queue {
                     );
                 }
 
+                gl.bind_texture(dst_target, Some(dst));
                 if dst_array_layer_count == 6 {
-                    let cube_map_target = match copy.dst_base.array_layer {
-                        0 => glow::TEXTURE_CUBE_MAP_POSITIVE_X,
-                        1 => glow::TEXTURE_CUBE_MAP_NEGATIVE_X,
-                        2 => glow::TEXTURE_CUBE_MAP_POSITIVE_Y,
-                        3 => glow::TEXTURE_CUBE_MAP_NEGATIVE_Y,
-                        4 => glow::TEXTURE_CUBE_MAP_POSITIVE_Z,
-                        5 => glow::TEXTURE_CUBE_MAP_NEGATIVE_Z,
-                        _ => panic!(),
-                    };
-
-                    gl.bind_texture(cube_map_target, Some(dst));
                     gl.copy_tex_sub_image_2d(
-                        cube_map_target,
+                        CUBEMAP_FACES[copy.dst_base.array_layer as usize],
                         copy.dst_base.mip_level as i32,
                         copy.dst_base.origin.x as i32,
                         copy.dst_base.origin.y as i32,
@@ -369,7 +359,6 @@ impl super::Queue {
                         copy.size.height as i32,
                     );
                 } else if is_layered_target(dst_target) {
-                    gl.bind_texture(dst_target, Some(dst));
                     gl.copy_tex_sub_image_3d(
                         dst_target,
                         copy.dst_base.mip_level as i32,
@@ -382,7 +371,6 @@ impl super::Queue {
                         copy.size.height as i32,
                     );
                 } else {
-                    gl.bind_texture(dst_target, Some(dst));
                     gl.copy_tex_sub_image_2d(
                         dst_target,
                         copy.dst_base.mip_level as i32,
