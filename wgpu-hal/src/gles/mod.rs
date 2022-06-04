@@ -188,6 +188,7 @@ struct AdapterShared {
 
 pub struct Adapter {
     shared: Arc<AdapterShared>,
+    downlevel_flags: wgt::DownlevelFlags,
 }
 
 pub struct Device {
@@ -274,6 +275,7 @@ pub struct Texture {
     #[allow(unused)]
     pub format_desc: TextureFormatDesc,
     pub copy_size: crate::CopyExtent,
+    pub is_cubemap: bool,
 }
 
 impl Texture {
@@ -293,6 +295,7 @@ impl Texture {
                 height: 0,
                 depth: 0,
             },
+            is_cubemap: false,
         }
     }
 }
@@ -628,7 +631,7 @@ enum Command {
         dst: glow::Texture,
         dst_target: BindTarget,
         copy: crate::TextureCopy,
-        dst_array_layer_count: u32,
+        dst_is_cubemap: bool,
     },
     CopyBufferToTexture {
         src: Buffer,
