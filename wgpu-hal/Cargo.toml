@@ -90,6 +90,9 @@ wasm-bindgen = { version = "0.2" }
 web-sys = { version = "0.3", features = ["Window", "HtmlCanvasElement", "WebGl2RenderingContext"] }
 js-sys = { version = "0.3" }
 
+[target.'cfg(target_os = "android")'.dependencies]
+android-properties = "0.2"
+
 [dependencies.naga]
 git = "https://github.com/gfx-rs/naga"
 rev = "89bed99bcc995bc5068c9c112fd9b7d7896bb148"
