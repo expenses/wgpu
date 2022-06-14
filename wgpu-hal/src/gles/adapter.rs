@@ -294,6 +294,8 @@ impl super::Adapter {
             extensions.contains("EXT_color_buffer_float"),
         );
 
+        let is_ext_color_buffer_float_supported = extensions.contains("EXT_color_buffer_float");
+
         let mut features = wgt::Features::empty()
             | wgt::Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES
             | wgt::Features::CLEAR_TEXTURE
@@ -505,8 +507,13 @@ impl super::Adapter {
                     workarounds,
                     shading_language_version,
                     max_texture_size,
+<<<<<<< HEAD
                     is_ext_color_buffer_float_supported: downlevel_flags
                         .contains(wgt::DownlevelFlags::COLOR_ATTACHMENT_FLOAT),
+||||||| a4352a1d
+=======
+                    is_ext_color_buffer_float_supported,
+>>>>>>> origin/master
                 }),
             },
             info: Self::make_info(vendor, renderer),
