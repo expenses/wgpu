@@ -209,7 +209,10 @@ impl super::Adapter {
             log::info!("SL version: {}", &sl_version);
             let (sl_major, sl_minor) = Self::parse_version(&sl_version).ok()?;
             let value = sl_major as u16 * 100 + sl_minor as u16 * 10;
-            naga::back::glsl::Version::Embedded { version: value, is_webgl: true }
+            naga::back::glsl::Version::Embedded {
+                version: value,
+                is_webgl: true,
+            }
         };
 
         let vertex_shader_storage_blocks = if supports_storage {
@@ -288,10 +291,6 @@ impl super::Adapter {
         downlevel_flags.set(
             wgt::DownlevelFlags::ANISOTROPIC_FILTERING,
             extensions.contains("EXT_texture_filter_anisotropic"),
-        );
-        downlevel_flags.set(
-            wgt::DownlevelFlags::COLOR_ATTACHMENT_FLOAT,
-            extensions.contains("EXT_color_buffer_float"),
         );
 
         let is_ext_color_buffer_float_supported = extensions.contains("EXT_color_buffer_float");
@@ -507,13 +506,7 @@ impl super::Adapter {
                     workarounds,
                     shading_language_version,
                     max_texture_size,
-<<<<<<< HEAD
-                    is_ext_color_buffer_float_supported: downlevel_flags
-                        .contains(wgt::DownlevelFlags::COLOR_ATTACHMENT_FLOAT),
-||||||| a4352a1d
-=======
                     is_ext_color_buffer_float_supported,
->>>>>>> origin/master
                 }),
             },
             info: Self::make_info(vendor, renderer),
