@@ -135,7 +135,6 @@ impl super::Device {
         let pipeline_options = glsl::PipelineOptions {
             shader_stage: naga_stage,
             entry_point: stage.entry_point.to_string(),
-            multiview: context.multiview,
         };
 
         let shader = &stage.module.naga;
@@ -146,12 +145,25 @@ impl super::Device {
             .position(|ep| ep.name.as_str() == stage.entry_point)
             .ok_or(crate::PipelineError::EntryPoint(naga_stage))?;
 
+        let mut naga_options = context.layout.naga_options.clone();
+
+        if let Some(multiview) = context.multiview {
+            naga_options.multiview = Some(naga::back::glsl::MultiviewOptions {
+                num_views: multiview,
+                extension: if cfg!(target_arch = "wasm32") {
+                    naga::back::glsl::MultiviewExtension::OvrMultiview2
+                } else {
+                    naga::back::glsl::MultiviewExtension::GLExtMultiview
+                }
+            });
+        }
+
         let mut output = String::new();
         let mut writer = glsl::Writer::new(
             &mut output,
             &shader.module,
             &shader.info,
-            &context.layout.naga_options,
+            &naga_options,
             &pipeline_options,
             Default::default(),
         )
@@ -213,7 +225,7 @@ impl super::Device {
         // Create empty fragment shader if only vertex shader is present
         if has_stages == wgt::ShaderStages::VERTEX {
             let version = match self.shared.shading_language_version {
-                naga::back::glsl::Version::Embedded { version, .. } => version,
+                naga::back::glsl::Version::Embedded(v) => v,
                 naga::back::glsl::Version::Desktop(_) => unreachable!(),
             };
             let shader_src = format!("#version {} es \n void main(void) {{}}", version,);
@@ -872,6 +884,8 @@ impl crate::Device<super::Api> for super::Device {
                 version: self.shared.shading_language_version,
                 writer_flags,
                 binding_map,
+                // Set when creating a shader.
+                multiview: None,
             },
         })
     }
