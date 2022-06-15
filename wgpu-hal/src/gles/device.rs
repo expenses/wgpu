@@ -20,6 +20,7 @@ struct CompilationContext<'a> {
     layout: &'a super::PipelineLayout,
     sampler_map: &'a mut super::SamplerBindMap,
     name_binding_map: &'a mut NameBindingMap,
+    multiview: Option<std::num::NonZeroU32>,
 }
 
 impl CompilationContext<'_> {
@@ -144,13 +145,27 @@ impl super::Device {
             .position(|ep| ep.name.as_str() == stage.entry_point)
             .ok_or(crate::PipelineError::EntryPoint(naga_stage))?;
 
+        let mut naga_options = context.layout.naga_options.clone();
+
+        if let Some(multiview) = context.multiview {
+            naga_options.multiview = Some(naga::back::glsl::MultiviewOptions {
+                num_views: multiview,
+                extension: if cfg!(target_arch = "wasm32") {
+                    naga::back::glsl::MultiviewExtension::OvrMultiview2
+                } else {
+                    naga::back::glsl::MultiviewExtension::GLExtMultiview
+                },
+            });
+        }
+
         let mut output = String::new();
         let mut writer = glsl::Writer::new(
             &mut output,
             &shader.module,
             &shader.info,
-            &context.layout.naga_options,
+            &naga_options,
             &pipeline_options,
+            Default::default(),
         )
         .map_err(|e| {
             let msg = format!("{}", e);
@@ -179,6 +194,7 @@ impl super::Device {
         shaders: I,
         layout: &super::PipelineLayout,
         #[cfg_attr(target_arch = "wasm32", allow(unused))] label: Option<&str>,
+        multiview: Option<std::num::NonZeroU32>,
     ) -> Result<super::PipelineInner, crate::PipelineError> {
         let program = gl.create_program().unwrap();
         #[cfg(not(target_arch = "wasm32"))]
@@ -199,6 +215,7 @@ impl super::Device {
                 layout,
                 sampler_map: &mut sampler_map,
                 name_binding_map: &mut name_binding_map,
+                multiview,
             };
 
             let shader = Self::create_shader(gl, naga_stage, stage, context)?;
@@ -866,6 +883,8 @@ impl crate::Device<super::Api> for super::Device {
                 version: self.shared.shading_language_version,
                 writer_flags,
                 binding_map,
+                // Set when creating a shader.
+                multiview: None,
             },
         })
     }
@@ -960,7 +979,7 @@ impl crate::Device<super::Api> for super::Device {
                 .as_ref()
                 .map(|fs| (naga::ShaderStage::Fragment, fs)),
         );
-        let inner = self.create_pipeline(gl, shaders, desc.layout, desc.label)?;
+        let inner = self.create_pipeline(gl, shaders, desc.layout, desc.label, desc.multiview)?;
 
         let (vertex_buffers, vertex_attributes) = {
             let mut buffers = Vec::new();
@@ -1028,7 +1047,7 @@ impl crate::Device<super::Api> for super::Device {
     ) -> Result<super::ComputePipeline, crate::PipelineError> {
         let gl = &self.shared.context.lock();
         let shaders = iter::once((naga::ShaderStage::Compute, &desc.stage));
-        let inner = self.create_pipeline(gl, shaders, desc.layout, desc.label)?;
+        let inner = self.create_pipeline(gl, shaders, desc.layout, desc.label, None)?;
 
         Ok(super::ComputePipeline { inner })
     }

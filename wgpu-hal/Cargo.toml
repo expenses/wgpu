@@ -91,15 +91,15 @@ web-sys = { version = "0.3", features = ["Window", "HtmlCanvasElement", "WebGl2R
 js-sys = { version = "0.3" }
 
 [dependencies.naga]
-git = "https://github.com/gfx-rs/naga"
-rev = "571302e"
+git = "https://github.com/expenses/naga"
+rev = "5d49ee9"
 #version = "0.8"
 
 # DEV dependencies
 
 [dev-dependencies.naga]
-git = "https://github.com/gfx-rs/naga"
-rev = "571302e"
+git = "https://github.com/expenses/naga"
+rev = "5d49ee9"
 #version = "0.8"
 features = ["wgsl-in"]
 
