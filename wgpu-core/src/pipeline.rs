@@ -124,6 +124,24 @@ pub enum CreateShaderModuleError {
     Validation(#[from] ShaderError<naga::WithSpan<naga::valid::ValidationError>>),
     #[error(transparent)]
     MissingFeatures(#[from] MissingFeatures),
+    #[error(
+        "shader global {bind:?} uses a group index {group} that exceeds the max_bind_groups limit of {limit}."
+    )]
+    InvalidGroupIndex {
+        bind: naga::ResourceBinding,
+        group: u32,
+        limit: u32,
+    },
+}
+
+impl CreateShaderModuleError {
+    pub fn location(&self, source: &str) -> Option<naga::SourceLocation> {
+        match *self {
+            CreateShaderModuleError::Parsing(ref err) => err.inner.location(source),
+            CreateShaderModuleError::Validation(ref err) => err.inner.location(source),
+            _ => None,
+        }
+    }
 }
 
 /// Describes a programmable pipeline stage.
@@ -231,7 +249,7 @@ pub struct FragmentState<'a> {
     /// The compiled fragment stage and its entry point.
     pub stage: ProgrammableStageDescriptor<'a>,
     /// The effect of draw calls on the color aspect of the output target.
-    pub targets: Cow<'a, [wgt::ColorTargetState]>,
+    pub targets: Cow<'a, [Option<wgt::ColorTargetState>]>,
 }
 
 /// Describes a render (graphics) pipeline.
@@ -262,8 +280,6 @@ pub struct RenderPipelineDescriptor<'a> {
 
 #[derive(Clone, Debug, Error)]
 pub enum ColorStateError {
-    #[error("output is missing")]
-    Missing,
     #[error("format {0:?} is not renderable")]
     FormatNotRenderable(wgt::TextureFormat),
     #[error("format {0:?} is not blendable")]

@@ -229,6 +229,7 @@ pub struct Device {
     library: Arc<native::D3D12Lib>,
     #[cfg(feature = "renderdoc")]
     render_doc: crate::auxil::renderdoc::RenderDoc,
+    null_rtv_handle: descriptor::Handle,
 }
 
 unsafe impl Send for Device {}
@@ -287,7 +288,7 @@ enum PassKind {
 
 struct PassState {
     has_label: bool,
-    resolves: ArrayVec<PassResolve, { crate::MAX_COLOR_TARGETS }>,
+    resolves: ArrayVec<PassResolve, { crate::MAX_COLOR_ATTACHMENTS }>,
     layout: PipelineLayoutShared,
     root_elements: [RootElement; MAX_ROOT_ELEMENTS],
     dirty_root_elements: u64,
@@ -329,6 +330,7 @@ pub struct CommandEncoder {
     allocator: native::CommandAllocator,
     device: native::Device,
     shared: Arc<DeviceShared>,
+    null_rtv_handle: descriptor::Handle,
     list: Option<native::GraphicsCommandList>,
     free_lists: Vec<native::GraphicsCommandList>,
     pass: PassState,

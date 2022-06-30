@@ -17,7 +17,7 @@ exclude = [
 default-members = ["wgpu", "wgpu-hal", "wgpu-info"]
 
 [patch."https://github.com/gfx-rs/naga"]
-naga = { path = "../naga" }
+#naga = { path = "../naga" }
 
 [patch."https://github.com/zakarumych/gpu-descriptor"]
 #gpu-descriptor = { path = "../gpu-descriptor/gpu-descriptor" }
@@ -27,7 +27,7 @@ naga = { path = "../naga" }
 
 [patch.crates-io]
 #naga = { path = "../naga" }
-glow = { git = "https://github.com/expenses/glow", branch = "web-sys-bind-raw-framebuffer" }
+#glow = { path = "../glow" }
 #d3d12 = { path = "../d3d12-rs" }
 #metal = { path = "../metal-rs" }
 #web-sys = { path = "../wasm-bindgen/crates/web-sys" }

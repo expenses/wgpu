@@ -50,7 +50,7 @@ impl super::Queue {
             // Reset the draw buffers to what they were before the clear
             let indices = (0..self.draw_buffer_count as u32)
                 .map(|i| glow::COLOR_ATTACHMENT0 + i)
-                .collect::<ArrayVec<_, { crate::MAX_COLOR_TARGETS }>>();
+                .collect::<ArrayVec<_, { crate::MAX_COLOR_ATTACHMENTS }>>();
             gl.draw_buffers(&indices);
         }
         #[cfg(not(target_arch = "wasm32"))]
@@ -443,13 +443,28 @@ impl super::Queue {
                         }
                     };
                     match dst_target {
-                        glow::TEXTURE_3D | glow::TEXTURE_2D_ARRAY => {
+                        glow::TEXTURE_3D => {
                             gl.tex_sub_image_3d(
                                 dst_target,
                                 copy.texture_base.mip_level as i32,
                                 copy.texture_base.origin.x as i32,
                                 copy.texture_base.origin.y as i32,
                                 copy.texture_base.origin.z as i32,
+                                copy.size.width as i32,
+                                copy.size.height as i32,
+                                copy.size.depth as i32,
+                                format_desc.external,
+                                format_desc.data_type,
+                                unpack_data,
+                            );
+                        }
+                        glow::TEXTURE_2D_ARRAY => {
+                            gl.tex_sub_image_3d(
+                                dst_target,
+                                copy.texture_base.mip_level as i32,
+                                copy.texture_base.origin.x as i32,
+                                copy.texture_base.origin.y as i32,
+                                copy.texture_base.array_layer as i32,
                                 copy.size.width as i32,
                                 copy.size.height as i32,
                                 copy.size.depth as i32,
@@ -708,7 +723,7 @@ impl super::Queue {
                         None,
                         0,
                     );
-                    for i in 0..crate::MAX_COLOR_TARGETS {
+                    for i in 0..crate::MAX_COLOR_ATTACHMENTS {
                         let target = glow::COLOR_ATTACHMENT0 + i as u32;
                         gl.framebuffer_texture_2d(
                             glow::DRAW_FRAMEBUFFER,
@@ -763,7 +778,7 @@ impl super::Queue {
                 self.draw_buffer_count = count;
                 let indices = (0..count as u32)
                     .map(|i| glow::COLOR_ATTACHMENT0 + i)
-                    .collect::<ArrayVec<_, { crate::MAX_COLOR_TARGETS }>>();
+                    .collect::<ArrayVec<_, { crate::MAX_COLOR_ATTACHMENTS }>>();
                 gl.draw_buffers(&indices);
 
                 if self
