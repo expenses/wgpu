@@ -671,6 +671,7 @@ impl crate::Device<super::Api> for super::Device {
             format_desc,
             copy_size,
             is_cubemap,
+            sample_count: desc.sample_count,
         })
     }
     unsafe fn destroy_texture(&self, texture: super::Texture) {
@@ -710,6 +711,7 @@ impl crate::Device<super::Api> for super::Device {
             mip_levels: desc.range.base_mip_level..end_mip_level,
             array_layers: desc.range.base_array_layer..end_array_layer,
             format: texture.format,
+            sample_count: texture.sample_count,
         })
     }
     unsafe fn destroy_texture_view(&self, _view: super::TextureView) {}

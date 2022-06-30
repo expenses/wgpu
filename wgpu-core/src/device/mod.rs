@@ -111,12 +111,12 @@ impl RenderPassContext {
                 ),
             );
         }
-        if self.sample_count != other.sample_count {
+        /*if self.sample_count != other.sample_count {
             return Err(RenderPassCompatibilityError::IncompatibleSampleCount(
                 self.sample_count,
                 other.sample_count,
             ));
-        }
+        }*/
         if self.multiview != other.multiview {
             return Err(RenderPassCompatibilityError::IncompatibleMultiview(
                 self.multiview,
@@ -751,7 +751,7 @@ impl<A: HalApi> Device<A> {
                 });
             }
 
-            if desc.size.depth_or_array_layers != 1 {
+            if false {
                 return Err(CreateTextureError::InvalidDimension(
                     TextureDimensionError::MultisampledDepthOrArrayLayer(
                         desc.size.depth_or_array_layers,
@@ -2035,13 +2035,13 @@ impl<A: HalApi> Device<A> {
                 multisampled,
             } => {
                 use wgt::TextureSampleType as Tst;
-                if multisampled != (view.samples != 1) {
+                /*if multisampled != (view.samples != 1) {
                     return Err(Error::InvalidTextureMultisample {
                         binding,
                         layout_multisampled: multisampled,
                         view_samples: view.samples,
                     });
-                }
+                }*/
                 match (sample_type, format_info.sample_type) {
                     (Tst::Uint, Tst::Uint) |
                     (Tst::Sint, Tst::Sint) |

@@ -304,6 +304,7 @@ impl crate::Surface<super::Api> for Surface {
                 depth: 1,
             },
             is_cubemap: false,
+            sample_count: 1,
         };
         Ok(Some(crate::AcquiredSurfaceTexture {
             texture,

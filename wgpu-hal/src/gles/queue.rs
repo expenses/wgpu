@@ -92,11 +92,12 @@ impl super::Queue {
                 let num_layers = view.array_layers.end - view.array_layers.start;
                 if num_layers > 1 {
                     #[cfg(target_arch = "wasm32")]
-                    gl.framebuffer_texture_multiview_ovr(
+                    gl.framebuffer_texture_multisample_multiview_ovr(
                         fbo_target,
                         attachment,
                         Some(raw),
                         view.mip_levels.start as i32,
+                        glow::MAX_SAMPLES as i32,
                         view.array_layers.start as i32,
                         num_layers as i32,
                     );

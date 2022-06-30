@@ -276,6 +276,7 @@ pub struct Texture {
     pub format_desc: TextureFormatDesc,
     pub copy_size: crate::CopyExtent,
     pub is_cubemap: bool,
+    pub sample_count: u32,
 }
 
 impl Texture {
@@ -296,6 +297,7 @@ impl Texture {
                 depth: 0,
             },
             is_cubemap: false,
+            sample_count: 1,
         }
     }
 }
@@ -308,6 +310,7 @@ pub struct TextureView {
     mip_levels: Range<u32>,
     array_layers: Range<u32>,
     format: wgt::TextureFormat,
+    sample_count: u32,
 }
 
 #[derive(Debug)]

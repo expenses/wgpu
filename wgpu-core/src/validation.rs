@@ -515,10 +515,10 @@ impl Resource {
                     _ => return Err(BindingError::WrongType),
                 };
                 if class != expected_class {
-                    return Err(BindingError::WrongTextureClass {
+                    /*return Err(BindingError::WrongTextureClass {
                         binding: expected_class,
                         shader: class,
-                    });
+                    });*/
                 }
                 usage
             }
