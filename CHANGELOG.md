@@ -40,6 +40,31 @@ Bottom level categories:
 
 ## Unreleased
 
+### Bug Fixes
+- Prefer `DeviceType::DiscreteGpu` over `DeviceType::Other` for `PowerPreference::LowPower` so Vulkan is preferred over OpenGL again by @Craig-Macomber in [#2853](https://github.com/gfx-rs/wgpu/pull/2853)
+
+#### DX12
+- `DownlevelCapabilities::default()` now returns the `ANISOTROPIC_FILTERING` flag set to true so DX12 lists `ANISOTROPIC_FILTERING` as true again by @cwfitzgerald in [#2851](https://github.com/gfx-rs/wgpu/pull/2851)
+
+#### GLES
+- gl: fix depth stencil texture format capability by @jinleili in [#2854](https://github.com/gfx-rs/wgpu/pull/2854)
+
+### Documentation
+
+- Update present_mode docs as most of them don't automatically fall back to Fifo anymore. by @Elabajaba in [#2855](https://github.com/gfx-rs/wgpu/pull/2855)
+
+## wgpu-0.13.1 (2022-07-02)
+
+### Bug Fixes
+
+#### General
+- Fix out of bounds access when surface texture is written to by multiple command buffers by @cwfitzgerald in [#2843](https://github.com/gfx-rs/wgpu/pull/2843)
+
+#### GLES
+
+- AutoNoVSync now correctly falls back to Fifo by @simbleau in [#2842](https://github.com/gfx-rs/wgpu/pull/2842)
+- Fix GL_EXT_color_buffer_float detection on native by @cwfitzgerald in [#2843](https://github.com/gfx-rs/wgpu/pull/2843)
+
 ## wgpu-0.13 (2022-06-30)
 
 ### Major Changes
@@ -110,7 +135,7 @@ is an under-documented area that we hope to improve in the future.
 ```diff
 - let future = buffer.slice(..).map_async(MapMode::Read);
 + buffer.slice(..).map_async(MapMode::Read, || {
-+     // Called when buffer is mapped.  
++     // Called when buffer is mapped.
 + })
 ```
 
@@ -174,6 +199,28 @@ Limits {
 }
 ```
 
+`Features::CLEAR_COMMANDS` is now unnecessary and no longer exists. The feature to clear buffers and textures is now part of upstream WebGPU.
+
+```diff
+DeviceDescriptor {
+  // ...
+  features: wgpu::Features::VERTEX_WRITABLE_STORAGE
+    | wgpu::Features::MAPPABLE_PRIMARY_BUFFERS
+    | wgpu::Features::TEXTURE_BINDING_ARRAY
+    | wgpu::Features::BUFFER_BINDING_ARRAY
+    | wgpu::Features::STORAGE_RESOURCE_BINDING_ARRAY
+-    | wgpu::Features::CLEAR_COMMANDS
+  ,
+}
+```
+
+`ComputePass::dispatch` has been renamed to `ComputePass::dispatch_workgroups`
+
+```diff
+- cpass.dispatch(self.work_group_count, 1, 1)
++ cpass.dispatch_workgroups(self.work_group_count, 1, 1)
+```
+
 ### Added/New Features
 
 #### General
@@ -222,7 +269,7 @@ Limits {
 
 #### DX11
 
-- Dx11 Backend by @cwfitzgerald in [#2443](https://github.com/gfx-rs/wgpu/pull/2443)
+- Skeleton of a DX11 backend - not working yet by @cwfitzgerald in [#2443](https://github.com/gfx-rs/wgpu/pull/2443)
 
 #### Hal
 
