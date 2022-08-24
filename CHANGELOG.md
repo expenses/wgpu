@@ -56,23 +56,39 @@ the same every time it is rendered, we now warn if it is missing.
 +fn vert_main(v_in: VertexInput) -> @builtin(position) @invariant vec4<f32> {...}
 ```
 
+### Added/New Features
+
+- Add `Buffer::size()` and `Buffer::usage()`; by @kpreid in [#2923](https://github.com/gfx-rs/wgpu/pull/2923)
+
 ### Bug Fixes
 
 #### General
+- Free `StagingBuffers` even when an error occurs in the operation that consumes them. By @jimblandy in [#2961](https://github.com/gfx-rs/wgpu/pull/2961)
 - Improve the validation and error reporting of buffer mappings by @nical in [#2848](https://github.com/gfx-rs/wgpu/pull/2848)
 - Fix compilation errors when using wgpu-core in isolation while targetting `wasm32-unknown-unknown` by @Seamooo in [#2922](https://github.com/gfx-rs/wgpu/pull/2922)
 - Fixed opening of RenderDoc library by @abuffseagull in [#2930](https://github.com/gfx-rs/wgpu/pull/2930)
 
+#### Metal
+- Add the missing `msg_send![view, retain]` call within `from_view` by @jinleili in [#2976](https://github.com/gfx-rs/wgpu/pull/2976)
+
+#### Vulkan
+
+- Fix `astc_hdr` formats support by @jinleili in [#2971]](https://github.com/gfx-rs/wgpu/pull/2971)
+
 ### Changes
 
 #### General
+- Added downlevel restriction error message for `InvalidFormatUsages` error by @Seamooo in [#2886](https://github.com/gfx-rs/wgpu/pull/2886)
 - Add warning when using CompareFunction::*Equal with vertex shader that is missing @invariant tag by @cwfitzgerald in [#2887](https://github.com/gfx-rs/wgpu/pull/2887)
+- Update Winit to version 0.27 and raw-window-handle to 0.5 by @wyatt-herkamp in  [#2918](https://github.com/gfx-rs/wgpu/pull/2918)
 
 #### Metal
 - Extract the generic code into `get_metal_layer` by @jinleili in [#2826](https://github.com/gfx-rs/wgpu/pull/2826)
 
+### Documentation
+
 #### General
-- Added downlevel restriction error message for `InvalidFormatUsages` error by @Seamooo in [#2886](https://github.com/gfx-rs/wgpu/pull/2886)
+- Add WGSL examples to complement existing examples written in GLSL by @norepimorphism in [#2888](https://github.com/gfx-rs/wgpu/pull/2888)
 
 ### Performance
 
@@ -81,6 +97,12 @@ the same every time it is rendered, we now warn if it is missing.
 ### Documentation
 
 - Expanded `StagingBelt` documentation by @kpreid in [#2905](https://github.com/gfx-rs/wgpu/pull/2905)
+
+### Build Configuration
+
+- Add the `"strict_asserts"` feature, to enable additional internal
+  run-time validation in `wgpu-core`. By @jimblandy in
+  [#2872](https://github.com/gfx-rs/wgpu/pull/2872).
 
 ## wgpu-0.13.2 (2022-07-13)
 
@@ -97,7 +119,10 @@ the same every time it is rendered, we now warn if it is missing.
 - Fix bugs when mapping/unmapping zero-sized buffers and ranges by @nical in [#2877](https://github.com/gfx-rs/wgpu/pull/2877)
 - Fix out-of-bound write in `map_buffer` with non-zero offset by @nical in [#2916](https://github.com/gfx-rs/wgpu/pull/2916)
 - Validate the number of color attachments in `create_render_pipeline` by @nical in [#2913](https://github.com/gfx-rs/wgpu/pull/2913)
-- Validate against the maximum binding index in `create_bind_group_layout` by @nical in [#2892]
+- Validate against the maximum binding index in `create_bind_group_layout` by @nical in [#2892](https://github.com/gfx-rs/wgpu/pull/2892)
+- Validate that map_async's range is not negative by @nical in [#2938](https://github.com/gfx-rs/wgpu/pull/2938)
+- Fix calculation/validation of layer/mip ranges in create_texture_view by @nical in [#2955](https://github.com/gfx-rs/wgpu/pull/2955)
+- Validate the sample count and mip level in `copy_texture_to_buffer` by @nical in [#2958](https://github.com/gfx-rs/wgpu/pull/2958)
 
 #### DX12
 - `DownlevelCapabilities::default()` now returns the `ANISOTROPIC_FILTERING` flag set to true so DX12 lists `ANISOTROPIC_FILTERING` as true again by @cwfitzgerald in [#2851](https://github.com/gfx-rs/wgpu/pull/2851)
