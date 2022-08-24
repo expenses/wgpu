@@ -139,21 +139,21 @@ pollster = "0.2"
 env_logger = "0.9"
 
 [dependencies.naga]
-#git = "https://github.com/gfx-rs/naga"
-#rev = "27d38aae"
+git = "https://github.com/expenses/naga"
+rev = "acd43c45f5ee586f4d4bf1f0bede8550c9f9576a"
 version = "0.9"
 optional = true
 
 # used to test all the example shaders
 [dev-dependencies.naga]
-#git = "https://github.com/gfx-rs/naga"
-#rev = "27d38aae"
+git = "https://github.com/expenses/naga"
+rev = "acd43c45f5ee586f4d4bf1f0bede8550c9f9576a"
 version = "0.9"
 features = ["wgsl-in"]
 
 [target.'cfg(target_arch = "wasm32")'.dependencies.naga]
-#git = "https://github.com/gfx-rs/naga"
-#rev = "27d38aae"
+git = "https://github.com/expenses/naga"
+rev = "acd43c45f5ee586f4d4bf1f0bede8550c9f9576a"
 version = "0.9"
 features = ["wgsl-out"]
 

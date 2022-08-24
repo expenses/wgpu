@@ -1204,10 +1204,29 @@ dependencies = [
  "indexmap",
  "log",
  "num-traits 0.2.15",
+ "rustc-hash",
+ "serde",
+ "spirv",
+ "termcolor",
+ "thiserror",
+ "unicode-xid",
+]
+
+[[package]]
+name = "naga"
+version = "0.9.0"
+source = "git+https://github.com/expenses/naga?rev=acd43c45f5ee586f4d4bf1f0bede8550c9f9576a#acd43c45f5ee586f4d4bf1f0bede8550c9f9576a"
+dependencies = [
+ "bit-set",
+ "bitflags",
+ "codespan-reporting",
+ "hexf-parse",
+ "indexmap",
+ "log",
+ "num-traits 0.2.15",
  "petgraph",
  "pp-rs",
  "rustc-hash",
- "serde",
  "spirv",
  "termcolor",
  "thiserror",
@@ -2362,7 +2381,7 @@ dependencies = [
  "glam",
  "js-sys",
  "log",
- "naga",
+ "naga 0.9.0 (git+https://github.com/expenses/naga?rev=acd43c45f5ee586f4d4bf1f0bede8550c9f9576a)",
  "nanorand",
  "noise",
  "obj",
@@ -2393,7 +2412,7 @@ dependencies = [
  "copyless",
  "fxhash",
  "log",
- "naga",
+ "naga 0.9.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "parking_lot 0.12.1",
  "profiling",
  "raw-window-handle 0.5.0",
@@ -2431,7 +2450,7 @@ dependencies = [
  "libloading",
  "log",
  "metal",
- "naga",
+ "naga 0.9.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "objc",
  "parking_lot 0.12.1",
  "profiling",
