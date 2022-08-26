@@ -426,15 +426,15 @@ impl crate::CommandEncoder<super::Api> for super::CommandEncoder {
             self.state.has_pass_label = true;
         }
 
-        let rendering_to_external_framebuffer =
-            desc.color_attachments
-                .iter()
-                .filter_map(|at| at.as_ref())
-                .any(|at| match at.target.view.inner {
-                    #[cfg(all(target_arch = "wasm32", not(target_os = "emscripten")))]
-                    super::TextureInner::ExternalFramebuffer { .. } => true,
-                    _ => false,
-                });
+        let rendering_to_external_framebuffer = desc
+            .color_attachments
+            .iter()
+            .filter_map(|at| at.as_ref())
+            .any(|at| match at.target.view.inner {
+                #[cfg(all(target_arch = "wasm32", not(target_os = "emscripten")))]
+                super::TextureInner::ExternalFramebuffer { .. } => true,
+                _ => false,
+            });
 
         if rendering_to_external_framebuffer && desc.color_attachments.len() != 1 {
             panic!("Multiple render attachments with external framebuffers are not supported.");

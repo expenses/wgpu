@@ -1537,8 +1537,10 @@ impl crate::Context for Context {
         device: &Self::DeviceId,
         desc: &crate::RenderPipelineDescriptor,
     ) -> Self::RenderPipelineId {
-        let mut mapped_vertex_state =
-            web_sys::GpuVertexState::new(&naga::back::wgsl::sanitise_entrypoint(desc.vertex.entry_point), &desc.vertex.module.id.0);
+        let mut mapped_vertex_state = web_sys::GpuVertexState::new(
+            &naga::back::wgsl::sanitise_entrypoint(desc.vertex.entry_point),
+            &desc.vertex.module.id.0,
+        );
 
         let buffers = desc
             .vertex
@@ -1606,8 +1608,11 @@ impl crate::Context for Context {
                     None => wasm_bindgen::JsValue::null(),
                 })
                 .collect::<js_sys::Array>();
-            let mapped_fragment_desc =
-                web_sys::GpuFragmentState::new(&naga::back::wgsl::sanitise_entrypoint(frag.entry_point), &frag.module.id.0, &targets);
+            let mapped_fragment_desc = web_sys::GpuFragmentState::new(
+                &naga::back::wgsl::sanitise_entrypoint(frag.entry_point),
+                &frag.module.id.0,
+                &targets,
+            );
             mapped_desc.fragment(&mapped_fragment_desc);
         }
 
@@ -1628,8 +1633,10 @@ impl crate::Context for Context {
         device: &Self::DeviceId,
         desc: &crate::ComputePipelineDescriptor,
     ) -> Self::ComputePipelineId {
-        let mapped_compute_stage =
-            web_sys::GpuProgrammableStage::new(&naga::back::wgsl::sanitise_entrypoint(desc.entry_point), &desc.module.id.0);
+        let mapped_compute_stage = web_sys::GpuProgrammableStage::new(
+            &naga::back::wgsl::sanitise_entrypoint(desc.entry_point),
+            &desc.module.id.0,
+        );
         let auto_layout = wasm_bindgen::JsValue::from(web_sys::GpuAutoLayoutMode::Auto);
         let mut mapped_desc = web_sys::GpuComputePipelineDescriptor::new(
             match desc.layout {
