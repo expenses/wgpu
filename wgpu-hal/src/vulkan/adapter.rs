@@ -28,6 +28,7 @@ pub struct PhysicalDeviceFeatures {
         vk::PhysicalDevice16BitStorageFeatures,
     )>,
     acceleration_structure: Option<vk::PhysicalDeviceAccelerationStructureFeaturesKHR>,
+    vulkan_1_2_features: vk::PhysicalDeviceVulkan12Features,
 }
 
 // This is safe because the structs have `p_next: *mut c_void`, which we null out/never read.
@@ -41,7 +42,7 @@ impl PhysicalDeviceFeatures {
         mut info: vk::DeviceCreateInfoBuilder<'a>,
     ) -> vk::DeviceCreateInfoBuilder<'a> {
         info = info.enabled_features(&self.core);
-        if let Some(ref mut feature) = self.descriptor_indexing {
+        /*if let Some(ref mut feature) = self.descriptor_indexing {
             info = info.push_next(feature);
         }
         if let Some(ref mut feature) = self.imageless_framebuffer {
@@ -65,10 +66,15 @@ impl PhysicalDeviceFeatures {
         if let Some((ref mut f16_i8_feature, ref mut _16bit_feature)) = self.shader_float16 {
             info = info.push_next(f16_i8_feature);
             info = info.push_next(_16bit_feature);
-        }
+        }*/
         if let Some(ref mut feature) = self.acceleration_structure {
             info = info.push_next(feature);
         }
+
+        
+
+        info = info.push_next(&mut self.vulkan_1_2_features);
+
         info
     }
 
@@ -304,6 +310,16 @@ impl PhysicalDeviceFeatures {
                 .acceleration_structure(true).build())
             } else {
                 None
+            },
+            vulkan_1_2_features: {
+                let mut vulkan_1_2_features = vk::PhysicalDeviceVulkan12Features::builder()
+        .runtime_descriptor_array(true)
+        .draw_indirect_count(true)
+        .descriptor_binding_partially_bound(true)
+        .buffer_device_address(true)
+        .shader_float16(true);
+
+        vulkan_1_2_features.build()
             }
         }
     }
@@ -1259,7 +1275,7 @@ impl super::Adapter {
                         size: memory_heap.size,
                     })
                     .collect(),
-                buffer_device_address: false,
+                buffer_device_address: true,
             };
             gpu_alloc::GpuAllocator::new(config, properties)
         };

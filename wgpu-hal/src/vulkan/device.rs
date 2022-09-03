@@ -856,8 +856,8 @@ impl crate::Device<super::Api> for super::Device {
 
         let vk_info = vk::AccelerationStructureCreateInfoKHR::builder()
         .buffer(raw_buffer)
-        .offset(256)
-        .size(desc.size / 2)
+        .offset(0)
+        .size(desc.size)
         .ty(ty).build();
 
         dbg!(&vk_info);

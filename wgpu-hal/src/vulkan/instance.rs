@@ -250,7 +250,10 @@ impl super::Instance {
             }
             let vk_info = vk::DebugUtilsMessengerCreateInfoEXT::builder()
                 .flags(vk::DebugUtilsMessengerCreateFlagsEXT::empty())
-                .message_severity(severity)
+                .message_severity(vk::DebugUtilsMessageSeverityFlagsEXT::VERBOSE
+                    | vk::DebugUtilsMessageSeverityFlagsEXT::INFO
+                    | vk::DebugUtilsMessageSeverityFlagsEXT::WARNING
+                    | vk::DebugUtilsMessageSeverityFlagsEXT::ERROR,)
                 .message_type(
                     vk::DebugUtilsMessageTypeFlagsEXT::GENERAL
                         | vk::DebugUtilsMessageTypeFlagsEXT::VALIDATION
@@ -483,20 +486,7 @@ impl crate::Instance<super::Api> for super::Instance {
             .engine_name(CStr::from_bytes_with_nul(b"wgpu-hal\0").unwrap())
             .engine_version(2)
             .api_version(
-                // Vulkan 1.0 doesn't like anything but 1.0 passed in here...
-                if driver_api_version < vk::API_VERSION_1_1 {
-                    vk::API_VERSION_1_0
-                } else {
-                    // This is the max Vulkan API version supported by `wgpu-hal`.
-                    //
-                    // If we want to increment this, there are some things that must be done first:
-                    //  - Audit the behavioral differences between the previous and new API versions.
-                    //  - Audit all extensions used by this backend:
-                    //    - If any were promoted in the new API version and the behavior has changed, we must handle the new behavior in addition to the old behavior.
-                    //    - If any were obsoleted in the new API version, we must implement a fallback for the new API version
-                    //    - If any are non-KHR-vendored, we must ensure the new behavior is still correct (since backwards-compatibility is not guaranteed).
-                    vk::HEADER_VERSION_COMPLETE
-                },
+                vk::API_VERSION_1_2
             );
 
         let extensions = Self::required_extensions(&entry, desc.flags)?;
