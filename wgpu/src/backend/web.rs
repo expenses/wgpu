@@ -2101,21 +2101,13 @@ impl crate::Context for Context {
         }
 
         if let Some(dsa) = &desc.depth_stencil_attachment {
-<<<<<<< HEAD
-            let mut clear_value = 1.0;
-=======
             let mut depth_clear_value = 0.0;
             let mut stencil_clear_value = 0;
->>>>>>> gfx/master
             let (depth_load_op, depth_store_op) = match dsa.depth_ops {
                 Some(ref ops) => {
                     let load_op = match ops.load {
                         crate::LoadOp::Clear(v) => {
-<<<<<<< HEAD
-                            clear_value = v;
-=======
                             depth_clear_value = v;
->>>>>>> gfx/master
                             web_sys::GpuLoadOp::Clear
                         }
                         crate::LoadOp::Load => web_sys::GpuLoadOp::Load,
@@ -2139,11 +2131,7 @@ impl crate::Context for Context {
             };
             let mut mapped_depth_stencil_attachment =
                 web_sys::GpuRenderPassDepthStencilAttachment::new(&dsa.view.id.0);
-<<<<<<< HEAD
-            mapped_depth_stencil_attachment.depth_clear_value(clear_value);
-=======
             mapped_depth_stencil_attachment.depth_clear_value(depth_clear_value);
->>>>>>> gfx/master
             mapped_depth_stencil_attachment.depth_load_op(depth_load_op);
             mapped_depth_stencil_attachment.depth_store_op(depth_store_op);
             mapped_depth_stencil_attachment.stencil_clear_value(stencil_clear_value);
