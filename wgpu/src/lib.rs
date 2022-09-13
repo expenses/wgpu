@@ -7,11 +7,13 @@
 #![warn(missing_docs)]
 
 mod backend;
+mod context;
 pub mod util;
 #[macro_use]
 mod macros;
 
 use std::{
+    any::Any,
     borrow::Cow,
     error,
     fmt::{Debug, Display},
@@ -23,6 +25,7 @@ use std::{
     thread,
 };
 
+use context::{DynContext, Id, IdSendSync};
 use parking_lot::Mutex;
 
 pub use wgt::{
@@ -43,7 +46,7 @@ pub use wgt::{
     QUERY_RESOLVE_BUFFER_ALIGNMENT, QUERY_SET_MAX_QUERIES, QUERY_SIZE, VERTEX_STRIDE_ALIGNMENT,
 };
 
-use backend::{BufferMappedRange, Context as C, QueueWriteBuffer};
+use backend::BufferMappedRange;
 
 /// Filter for error scopes.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd)]
@@ -179,21 +182,22 @@ trait Context: Debug + Send + Sized + Sync {
     type PipelineLayoutId: Debug + Send + Sync + 'static;
     type RenderPipelineId: Debug + Send + Sync + 'static;
     type ComputePipelineId: Debug + Send + Sync + 'static;
-    type CommandEncoderId: Debug;
-    type ComputePassId: Debug + ComputePassInner<Self>;
-    type RenderPassId: Debug + RenderPassInner<Self>;
-    type CommandBufferId: Debug + Send + Sync;
-    type RenderBundleEncoderId: Debug + RenderInner<Self>;
+    type CommandEncoderId: Debug + Send + Sync + 'static;
+    type ComputePassId: Debug + ComputePassInner<Self> + 'static;
+    type RenderPassId: Debug + RenderPassInner<Self> + 'static;
+    type CommandBufferId: Debug + Send + Sync + 'static;
+    type RenderBundleEncoderId: Debug + RenderInner<Self> + 'static;
     type RenderBundleId: Debug + Send + Sync + 'static;
     type SurfaceId: Debug + Send + Sync + 'static;
 
-    type SurfaceOutputDetail: Send;
-    type SubmissionIndex: Debug + Copy + Clone + Send + 'static;
+    type SurfaceOutputDetail: Send + Sync + 'static;
+    type SubmissionIndex: Debug + Clone + Send + Sync + 'static;
 
-    type RequestAdapterFuture: Future<Output = Option<Self::AdapterId>> + Send;
+    type RequestAdapterFuture: Future<Output = Option<Self::AdapterId>> + Send + 'static;
     type RequestDeviceFuture: Future<Output = Result<(Self::DeviceId, Self::QueueId), RequestDeviceError>>
-        + Send;
-    type PopErrorScopeFuture: Future<Output = Option<Error>> + Send;
+        + Send
+        + 'static;
+    type PopErrorScopeFuture: Future<Output = Option<Error>> + Send + 'static;
 
     fn init(backends: Backends) -> Self;
     fn instance_create_surface(
@@ -337,12 +341,12 @@ trait Context: Debug + Send + Sized + Sync {
     fn device_on_uncaptured_error(
         &self,
         device: &Self::DeviceId,
-        handler: impl UncapturedErrorHandler,
+        handler: Box<dyn UncapturedErrorHandler>,
     );
     fn device_push_error_scope(&self, device: &Self::DeviceId, filter: ErrorFilter);
     fn device_pop_error_scope(&self, device: &Self::DeviceId) -> Self::PopErrorScopeFuture;
 
-    fn buffer_map_async<F>(
+    fn buffer_map_async(
         &self,
         buffer: &Self::BufferId,
         mode: MapMode,
@@ -350,9 +354,8 @@ trait Context: Debug + Send + Sized + Sync {
         // Note: we keep this as an `impl` through the context because the native backend
         // needs to wrap it with a wrapping closure. queue_on_submitted_work_done doesn't
         // need this wrapping closure, so can be made a Box immediately.
-        callback: F,
-    ) where
-        F: FnOnce(Result<(), BufferAsyncError>) + Send + 'static;
+        callback: Box<dyn FnOnce(Result<(), BufferAsyncError>) + Send + 'static>,
+    );
     fn buffer_get_mapped_range(
         &self,
         buffer: &Self::BufferId,
@@ -369,7 +372,7 @@ trait Context: Debug + Send + Sized + Sync {
     fn adapter_drop(&self, adapter: &Self::AdapterId);
     fn buffer_destroy(&self, buffer: &Self::BufferId);
     fn buffer_drop(&self, buffer: &Self::BufferId);
-    fn texture_destroy(&self, buffer: &Self::TextureId);
+    fn texture_destroy(&self, texture: &Self::TextureId);
     fn texture_drop(&self, texture: &Self::TextureId);
     fn texture_view_drop(&self, texture_view: &Self::TextureViewId);
     fn sampler_drop(&self, sampler: &Self::SamplerId);
@@ -505,13 +508,13 @@ trait Context: Debug + Send + Sized + Sync {
         &self,
         queue: &Self::QueueId,
         size: BufferSize,
-    ) -> QueueWriteBuffer;
+    ) -> Box<dyn context::QueueWriteBuffer>;
     fn queue_write_staging_buffer(
         &self,
         queue: &Self::QueueId,
         buffer: &Self::BufferId,
         offset: BufferAddress,
-        staging_buffer: &QueueWriteBuffer,
+        staging_buffer: &dyn context::QueueWriteBuffer,
     );
     fn queue_write_texture(
         &self,
@@ -541,6 +544,8 @@ trait Context: Debug + Send + Sized + Sync {
     fn device_stop_capture(&self, device: &Self::DeviceId);
 }
 
+type C = dyn DynContext;
+
 /// Context for all other wgpu objects. Instance of wgpu.
 ///
 /// This is the first thing you create when using wgpu.
@@ -566,7 +571,7 @@ static_assertions::assert_impl_all!(Instance: Send, Sync);
 #[derive(Debug)]
 pub struct Adapter {
     context: Arc<C>,
-    id: <C as Context>::AdapterId,
+    id: IdSendSync,
 }
 static_assertions::assert_impl_all!(Adapter: Send, Sync);
 
@@ -589,15 +594,15 @@ impl Drop for Adapter {
 #[derive(Debug)]
 pub struct Device {
     context: Arc<C>,
-    id: <C as Context>::DeviceId,
+    id: IdSendSync,
 }
 static_assertions::assert_impl_all!(Device: Send, Sync);
 
 /// Identifier for a particular call to [`Queue::submit`]. Can be used
 /// as part of an argument to [`Device::poll`] to block for a particular
 /// submission to finish.
-#[derive(Debug, Copy, Clone)]
-pub struct SubmissionIndex(<C as Context>::SubmissionIndex);
+#[derive(Debug, Clone)]
+pub struct SubmissionIndex(Arc<IdSendSync>);
 static_assertions::assert_impl_all!(SubmissionIndex: Send, Sync);
 
 /// The main purpose of this struct is to resolve mapped ranges (convert sizes
@@ -668,7 +673,7 @@ impl MapContext {
 #[derive(Debug)]
 pub struct Buffer {
     context: Arc<C>,
-    id: <C as Context>::BufferId,
+    id: IdSendSync,
     map_context: Mutex<MapContext>,
     size: wgt::BufferAddress,
     usage: BufferUsages,
@@ -696,7 +701,7 @@ static_assertions::assert_impl_all!(BufferSlice: Send, Sync);
 #[derive(Debug)]
 pub struct Texture {
     context: Arc<C>,
-    id: <C as Context>::TextureId,
+    id: IdSendSync,
     owned: bool,
 }
 static_assertions::assert_impl_all!(Texture: Send, Sync);
@@ -710,7 +715,7 @@ static_assertions::assert_impl_all!(Texture: Send, Sync);
 #[derive(Debug)]
 pub struct TextureView {
     context: Arc<C>,
-    id: <C as Context>::TextureViewId,
+    id: IdSendSync,
 }
 static_assertions::assert_impl_all!(TextureView: Send, Sync);
 
@@ -726,7 +731,7 @@ static_assertions::assert_impl_all!(TextureView: Send, Sync);
 #[derive(Debug)]
 pub struct Sampler {
     context: Arc<C>,
-    id: <C as Context>::SamplerId,
+    id: IdSendSync,
 }
 static_assertions::assert_impl_all!(Sampler: Send, Sync);
 
@@ -745,7 +750,7 @@ impl Drop for Sampler {
 #[derive(Debug)]
 pub struct Surface {
     context: Arc<C>,
-    id: <C as Context>::SurfaceId,
+    id: IdSendSync,
 }
 static_assertions::assert_impl_all!(Surface: Send, Sync);
 
@@ -771,7 +776,7 @@ impl Drop for Surface {
 #[derive(Debug)]
 pub struct BindGroupLayout {
     context: Arc<C>,
-    id: <C as Context>::BindGroupLayoutId,
+    id: IdSendSync,
 }
 static_assertions::assert_impl_all!(BindGroupLayout: Send, Sync);
 
@@ -794,7 +799,7 @@ impl Drop for BindGroupLayout {
 #[derive(Debug)]
 pub struct BindGroup {
     context: Arc<C>,
-    id: <C as Context>::BindGroupId,
+    id: IdSendSync,
 }
 static_assertions::assert_impl_all!(BindGroup: Send, Sync);
 
@@ -817,7 +822,7 @@ impl Drop for BindGroup {
 #[derive(Debug)]
 pub struct ShaderModule {
     context: Arc<C>,
-    id: <C as Context>::ShaderModuleId,
+    id: IdSendSync,
 }
 static_assertions::assert_impl_all!(ShaderModule: Send, Sync);
 
@@ -896,7 +901,7 @@ static_assertions::assert_impl_all!(ShaderModuleDescriptorSpirV: Send, Sync);
 #[derive(Debug)]
 pub struct PipelineLayout {
     context: Arc<C>,
-    id: <C as Context>::PipelineLayoutId,
+    id: IdSendSync,
 }
 static_assertions::assert_impl_all!(PipelineLayout: Send, Sync);
 
@@ -917,7 +922,7 @@ impl Drop for PipelineLayout {
 #[derive(Debug)]
 pub struct RenderPipeline {
     context: Arc<C>,
-    id: <C as Context>::RenderPipelineId,
+    id: IdSendSync,
 }
 static_assertions::assert_impl_all!(RenderPipeline: Send, Sync);
 
@@ -951,7 +956,7 @@ impl RenderPipeline {
 #[derive(Debug)]
 pub struct ComputePipeline {
     context: Arc<C>,
-    id: <C as Context>::ComputePipelineId,
+    id: IdSendSync,
 }
 static_assertions::assert_impl_all!(ComputePipeline: Send, Sync);
 
@@ -986,7 +991,7 @@ impl ComputePipeline {
 #[derive(Debug)]
 pub struct CommandBuffer {
     context: Arc<C>,
-    id: Option<<C as Context>::CommandBufferId>,
+    id: Option<IdSendSync>,
 }
 static_assertions::assert_impl_all!(CommandBuffer: Send, Sync);
 
@@ -1012,7 +1017,7 @@ impl Drop for CommandBuffer {
 #[derive(Debug)]
 pub struct CommandEncoder {
     context: Arc<C>,
-    id: Option<<C as Context>::CommandEncoderId>,
+    id: Option<IdSendSync>,
 }
 static_assertions::assert_impl_all!(CommandEncoder: Send, Sync);
 
@@ -1034,7 +1039,7 @@ impl Drop for CommandEncoder {
 /// https://gpuweb.github.io/gpuweb/#render-pass-encoder).
 #[derive(Debug)]
 pub struct RenderPass<'a> {
-    id: <C as Context>::RenderPassId,
+    id: Id,
     parent: &'a mut CommandEncoder,
 }
 
@@ -1046,7 +1051,7 @@ pub struct RenderPass<'a> {
 /// https://gpuweb.github.io/gpuweb/#compute-pass-encoder).
 #[derive(Debug)]
 pub struct ComputePass<'a> {
-    id: <C as Context>::ComputePassId,
+    id: Id,
     parent: &'a mut CommandEncoder,
 }
 
@@ -1064,8 +1069,8 @@ pub struct ComputePass<'a> {
 #[derive(Debug)]
 pub struct RenderBundleEncoder<'a> {
     context: Arc<C>,
-    id: <C as Context>::RenderBundleEncoderId,
-    _parent: &'a Device,
+    id: Id,
+    parent: &'a Device,
     /// This type should be !Send !Sync, because it represents an allocation on this thread's
     /// command buffer.
     _p: PhantomData<*const u8>,
@@ -1084,7 +1089,7 @@ static_assertions::assert_not_impl_any!(RenderBundleEncoder<'_>: Send, Sync);
 #[derive(Debug)]
 pub struct RenderBundle {
     context: Arc<C>,
-    id: <C as Context>::RenderBundleId,
+    id: IdSendSync,
 }
 static_assertions::assert_impl_all!(RenderBundle: Send, Sync);
 
@@ -1103,7 +1108,7 @@ impl Drop for RenderBundle {
 /// Corresponds to [WebGPU `GPUQuerySet`](https://gpuweb.github.io/gpuweb/#queryset).
 pub struct QuerySet {
     context: Arc<C>,
-    id: <C as Context>::QuerySetId,
+    id: IdSendSync,
 }
 static_assertions::assert_impl_all!(QuerySet: Send, Sync);
 
@@ -1125,7 +1130,7 @@ impl Drop for QuerySet {
 #[derive(Debug)]
 pub struct Queue {
     context: Arc<C>,
-    id: <C as Context>::QueueId,
+    id: IdSendSync,
 }
 static_assertions::assert_impl_all!(Queue: Send, Sync);
 
@@ -1674,7 +1679,7 @@ pub struct SurfaceTexture {
     /// but should be recreated for maximum performance.
     pub suboptimal: bool,
     presented: bool,
-    detail: <C as Context>::SurfaceOutputDetail,
+    detail: Box<dyn Any + Send + Sync>,
 }
 static_assertions::assert_impl_all!(SurfaceTexture: Send, Sync);
 
@@ -1714,7 +1719,7 @@ impl Instance {
     ///   during instantiation.
     pub fn new(backends: Backends) -> Self {
         Self {
-            context: Arc::new(C::init(backends)),
+            context: Arc::from(crate::backend::Context::init(backends)),
         }
     }
 
@@ -1730,7 +1735,9 @@ impl Instance {
     #[cfg(any(not(target_arch = "wasm32"), feature = "emscripten"))]
     pub unsafe fn from_hal<A: wgc::hub::HalApi>(hal_instance: A::Instance) -> Self {
         Self {
-            context: Arc::new(C::from_hal_instance::<A>(hal_instance)),
+            context: Arc::new(crate::backend::Context::from_hal_instance::<A>(
+                hal_instance,
+            )),
         }
     }
 
@@ -1746,7 +1753,11 @@ impl Instance {
     /// [`Instance`]: hal::Api::Instance
     #[cfg(any(not(target_arch = "wasm32"), feature = "webgl"))]
     pub unsafe fn as_hal<A: wgc::hub::HalApi>(&self) -> Option<&A::Instance> {
-        self.context.instance_as_hal::<A>()
+        self.context
+            .as_any()
+            .downcast_ref::<crate::backend::Context>()
+            .unwrap()
+            .instance_as_hal::<A>()
     }
 
     /// Create an new instance of wgpu from a wgpu-core instance.
@@ -1761,7 +1772,7 @@ impl Instance {
     #[cfg(any(not(target_arch = "wasm32"), feature = "webgl"))]
     pub unsafe fn from_core(core_instance: wgc::instance::Instance) -> Self {
         Self {
-            context: Arc::new(C::from_core_instance(core_instance)),
+            context: Arc::new(crate::backend::Context::from_core_instance(core_instance)),
         }
     }
 
@@ -1774,10 +1785,13 @@ impl Instance {
     pub fn enumerate_adapters(&self, backends: Backends) -> impl Iterator<Item = Adapter> {
         let context = Arc::clone(&self.context);
         self.context
+            .as_any()
+            .downcast_ref::<crate::backend::Context>()
+            .unwrap()
             .enumerate_adapters(backends)
             .into_iter()
             .map(move |id| crate::Adapter {
-                id,
+                id: IdSendSync::upcast(id),
                 context: Arc::clone(&context),
             })
     }
@@ -1807,7 +1821,13 @@ impl Instance {
         hal_adapter: hal::ExposedAdapter<A>,
     ) -> Adapter {
         let context = Arc::clone(&self.context);
-        let id = context.create_adapter_from_hal(hal_adapter);
+        let id = IdSendSync::upcast(
+            context
+                .as_any()
+                .downcast_ref::<crate::backend::Context>()
+                .unwrap()
+                .create_adapter_from_hal(hal_adapter),
+        );
         Adapter { context, id }
     }
 
@@ -1826,7 +1846,7 @@ impl Instance {
     ) -> Surface {
         Surface {
             context: Arc::clone(&self.context),
-            id: Context::instance_create_surface(
+            id: DynContext::instance_create_surface(
                 &*self.context,
                 raw_window_handle::HasRawDisplayHandle::raw_display_handle(window),
                 raw_window_handle::HasRawWindowHandle::raw_window_handle(window),
@@ -1844,7 +1864,16 @@ impl Instance {
         &self,
         layer: *mut std::ffi::c_void,
     ) -> Surface {
-        self.context.create_surface_from_core_animation_layer(layer)
+        Surface {
+            context: Arc::clone(&self.context),
+            id: IdSendSync::upcast(
+                self.context
+                    .as_any()
+                    .downcast_ref::<crate::backend::Context>()
+                    .unwrap()
+                    .create_surface_from_core_animation_layer(layer),
+            ),
+        }
     }
 
     /// Creates a surface from `IDCompositionVisual`.
@@ -1854,7 +1883,16 @@ impl Instance {
     /// - visual must be a valid IDCompositionVisual to create a surface upon.
     #[cfg(target_os = "windows")]
     pub unsafe fn create_surface_from_visual(&self, visual: *mut std::ffi::c_void) -> Surface {
-        self.context.create_surface_from_visual(visual)
+        Surface {
+            context: Arc::clone(&self.context),
+            id: IdSendSync::upcast(
+                self.context
+                    .as_any()
+                    .downcast_ref::<crate::backend::Context>()
+                    .unwrap()
+                    .create_surface_from_visual(visual),
+            ),
+        }
     }
 
     /// Creates a surface from a `web_sys::HtmlCanvasElement`.
@@ -1865,7 +1903,13 @@ impl Instance {
     pub fn create_surface_from_canvas(&self, canvas: &web_sys::HtmlCanvasElement) -> Surface {
         Surface {
             context: Arc::clone(&self.context),
-            id: self.context.instance_create_surface_from_canvas(canvas),
+            id: IdSendSync::upcast(
+                self.context
+                    .as_any()
+                    .downcast_ref::<crate::backend::Context>()
+                    .unwrap()
+                    .instance_create_surface_from_canvas(canvas),
+            ),
         }
     }
 
@@ -1880,9 +1924,13 @@ impl Instance {
     ) -> Surface {
         Surface {
             context: Arc::clone(&self.context),
-            id: self
-                .context
-                .instance_create_surface_from_offscreen_canvas(canvas),
+            id: IdSendSync::upcast(
+                self.context
+                    .as_any()
+                    .downcast_ref::<crate::backend::Context>()
+                    .unwrap()
+                    .instance_create_surface_from_offscreen_canvas(canvas),
+            ),
         }
     }
 
@@ -1909,7 +1957,11 @@ impl Instance {
     /// Generates memory report.
     #[cfg(any(not(target_arch = "wasm32"), feature = "emscripten"))]
     pub fn generate_report(&self) -> wgc::hub::GlobalReport {
-        self.context.generate_report()
+        self.context
+            .as_any()
+            .downcast_ref::<crate::backend::Context>()
+            .unwrap()
+            .generate_report()
     }
 }
 
@@ -1936,7 +1988,7 @@ impl Adapter {
         trace_path: Option<&std::path::Path>,
     ) -> impl Future<Output = Result<(Device, Queue), RequestDeviceError>> + Send {
         let context = Arc::clone(&self.context);
-        let device = Context::adapter_request_device(&*self.context, &self.id, desc, trace_path);
+        let device = DynContext::adapter_request_device(&*self.context, &self.id, desc, trace_path);
         async move {
             device.await.map(|(device_id, queue_id)| {
                 (
@@ -1968,16 +2020,19 @@ impl Adapter {
     ) -> Result<(Device, Queue), RequestDeviceError> {
         let context = Arc::clone(&self.context);
         self.context
-            .create_device_from_hal(&self.id, hal_device, desc, trace_path)
+            .as_any()
+            .downcast_ref::<crate::backend::Context>()
+            .unwrap()
+            .create_device_from_hal(self.id.downcast_id(), hal_device, desc, trace_path)
             .map(|(device_id, queue_id)| {
                 (
                     Device {
                         context: Arc::clone(&context),
-                        id: device_id,
+                        id: IdSendSync::upcast(device_id),
                     },
                     Queue {
                         context,
-                        id: queue_id,
+                        id: IdSendSync::upcast(queue_id),
                     },
                 )
             })
@@ -2008,12 +2063,15 @@ impl Adapter {
         hal_adapter_callback: F,
     ) -> R {
         self.context
-            .adapter_as_hal::<A, F, R>(self.id, hal_adapter_callback)
+            .as_any()
+            .downcast_ref::<crate::backend::Context>()
+            .unwrap()
+            .adapter_as_hal::<A, F, R>(*self.id.downcast_id(), hal_adapter_callback)
     }
 
     /// Returns whether this adapter may present to the passed surface.
     pub fn is_surface_supported(&self, surface: &Surface) -> bool {
-        Context::adapter_is_surface_supported(&*self.context, &self.id, &surface.id)
+        DynContext::adapter_is_surface_supported(&*self.context, &self.id, &surface.id)
     }
 
     /// List all features that are supported with this adapter.
@@ -2021,7 +2079,7 @@ impl Adapter {
     /// Features must be explicitly requested in [`Adapter::request_device`] in order
     /// to use them.
     pub fn features(&self) -> Features {
-        Context::adapter_features(&*self.context, &self.id)
+        DynContext::adapter_features(&*self.context, &self.id)
     }
 
     /// List the "best" limits that are supported by this adapter.
@@ -2029,17 +2087,17 @@ impl Adapter {
     /// Limits must be explicitly requested in [`Adapter::request_device`] to set
     /// the values that you are allowed to use.
     pub fn limits(&self) -> Limits {
-        Context::adapter_limits(&*self.context, &self.id)
+        DynContext::adapter_limits(&*self.context, &self.id)
     }
 
     /// Get info about the adapter itself.
     pub fn get_info(&self) -> AdapterInfo {
-        Context::adapter_get_info(&*self.context, &self.id)
+        DynContext::adapter_get_info(&*self.context, &self.id)
     }
 
     /// Get info about the adapter itself.
     pub fn get_downlevel_capabilities(&self) -> DownlevelCapabilities {
-        Context::adapter_downlevel_capabilities(&*self.context, &self.id)
+        DynContext::adapter_downlevel_capabilities(&*self.context, &self.id)
     }
 
     /// Returns the features supported for a given texture format by this adapter.
@@ -2047,7 +2105,7 @@ impl Adapter {
     /// Note that the WebGPU spec further restricts the available usages/features.
     /// To disable these restrictions on a device, request the [`Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES`] feature.
     pub fn get_texture_format_features(&self, format: TextureFormat) -> TextureFormatFeatures {
-        Context::adapter_get_texture_format_features(&*self.context, &self.id, format)
+        DynContext::adapter_get_texture_format_features(&*self.context, &self.id, format)
     }
 }
 
@@ -2062,28 +2120,28 @@ impl Device {
     ///
     /// On the web, this is a no-op. `Device`s are automatically polled.
     pub fn poll(&self, maintain: Maintain) -> bool {
-        Context::device_poll(&*self.context, &self.id, maintain)
+        DynContext::device_poll(&*self.context, &self.id, maintain)
     }
 
     /// List all features that may be used with this device.
     ///
     /// Functions may panic if you use unsupported features.
     pub fn features(&self) -> Features {
-        Context::device_features(&*self.context, &self.id)
+        DynContext::device_features(&*self.context, &self.id)
     }
 
     /// List all limits that were requested of this device.
     ///
     /// If any of these limits are exceeded, functions may panic.
     pub fn limits(&self) -> Limits {
-        Context::device_limits(&*self.context, &self.id)
+        DynContext::device_limits(&*self.context, &self.id)
     }
 
     /// Creates a shader module from either SPIR-V or WGSL source code.
     pub fn create_shader_module(&self, desc: ShaderModuleDescriptor) -> ShaderModule {
         ShaderModule {
             context: Arc::clone(&self.context),
-            id: Context::device_create_shader_module(
+            id: DynContext::device_create_shader_module(
                 &*self.context,
                 &self.id,
                 desc,
@@ -2108,7 +2166,7 @@ impl Device {
     ) -> ShaderModule {
         ShaderModule {
             context: Arc::clone(&self.context),
-            id: Context::device_create_shader_module(
+            id: DynContext::device_create_shader_module(
                 &*self.context,
                 &self.id,
                 desc,
@@ -2131,7 +2189,7 @@ impl Device {
     ) -> ShaderModule {
         ShaderModule {
             context: Arc::clone(&self.context),
-            id: Context::device_create_shader_module_spirv(&*self.context, &self.id, desc),
+            id: DynContext::device_create_shader_module_spirv(&*self.context, &self.id, desc),
         }
     }
 
@@ -2139,7 +2197,7 @@ impl Device {
     pub fn create_command_encoder(&self, desc: &CommandEncoderDescriptor) -> CommandEncoder {
         CommandEncoder {
             context: Arc::clone(&self.context),
-            id: Some(Context::device_create_command_encoder(
+            id: Some(DynContext::device_create_command_encoder(
                 &*self.context,
                 &self.id,
                 desc,
@@ -2154,8 +2212,8 @@ impl Device {
     ) -> RenderBundleEncoder {
         RenderBundleEncoder {
             context: Arc::clone(&self.context),
-            id: Context::device_create_render_bundle_encoder(&*self.context, &self.id, desc),
-            _parent: self,
+            id: DynContext::device_create_render_bundle_encoder(&*self.context, &self.id, desc),
+            parent: self,
             _p: Default::default(),
         }
     }
@@ -2164,7 +2222,7 @@ impl Device {
     pub fn create_bind_group(&self, desc: &BindGroupDescriptor) -> BindGroup {
         BindGroup {
             context: Arc::clone(&self.context),
-            id: Context::device_create_bind_group(&*self.context, &self.id, desc),
+            id: DynContext::device_create_bind_group(&*self.context, &self.id, desc),
         }
     }
 
@@ -2172,7 +2230,7 @@ impl Device {
     pub fn create_bind_group_layout(&self, desc: &BindGroupLayoutDescriptor) -> BindGroupLayout {
         BindGroupLayout {
             context: Arc::clone(&self.context),
-            id: Context::device_create_bind_group_layout(&*self.context, &self.id, desc),
+            id: DynContext::device_create_bind_group_layout(&*self.context, &self.id, desc),
         }
     }
 
@@ -2180,7 +2238,7 @@ impl Device {
     pub fn create_pipeline_layout(&self, desc: &PipelineLayoutDescriptor) -> PipelineLayout {
         PipelineLayout {
             context: Arc::clone(&self.context),
-            id: Context::device_create_pipeline_layout(&*self.context, &self.id, desc),
+            id: DynContext::device_create_pipeline_layout(&*self.context, &self.id, desc),
         }
     }
 
@@ -2188,7 +2246,7 @@ impl Device {
     pub fn create_render_pipeline(&self, desc: &RenderPipelineDescriptor) -> RenderPipeline {
         RenderPipeline {
             context: Arc::clone(&self.context),
-            id: Context::device_create_render_pipeline(&*self.context, &self.id, desc),
+            id: DynContext::device_create_render_pipeline(&*self.context, &self.id, desc),
         }
     }
 
@@ -2196,7 +2254,7 @@ impl Device {
     pub fn create_compute_pipeline(&self, desc: &ComputePipelineDescriptor) -> ComputePipeline {
         ComputePipeline {
             context: Arc::clone(&self.context),
-            id: Context::device_create_compute_pipeline(&*self.context, &self.id, desc),
+            id: DynContext::device_create_compute_pipeline(&*self.context, &self.id, desc),
         }
     }
 
@@ -2208,7 +2266,7 @@ impl Device {
         }
         Buffer {
             context: Arc::clone(&self.context),
-            id: Context::device_create_buffer(&*self.context, &self.id, desc),
+            id: DynContext::device_create_buffer(&*self.context, &self.id, desc),
             map_context: Mutex::new(map_context),
             size: desc.size,
             usage: desc.usage,
@@ -2221,7 +2279,7 @@ impl Device {
     pub fn create_texture(&self, desc: &TextureDescriptor) -> Texture {
         Texture {
             context: Arc::clone(&self.context),
-            id: Context::device_create_texture(&*self.context, &self.id, desc),
+            id: DynContext::device_create_texture(&*self.context, &self.id, desc),
             owned: true,
         }
     }
@@ -2241,9 +2299,13 @@ impl Device {
     ) -> Texture {
         Texture {
             context: Arc::clone(&self.context),
-            id: self
-                .context
-                .create_texture_from_hal::<A>(hal_texture, &self.id, desc),
+            id: IdSendSync::upcast(
+                self.context
+                    .as_any()
+                    .downcast_ref::<crate::backend::Context>()
+                    .unwrap()
+                    .create_texture_from_hal::<A>(hal_texture, self.id.downcast_id(), desc),
+            ),
             owned: true,
         }
     }
@@ -2254,7 +2316,7 @@ impl Device {
     pub fn create_sampler(&self, desc: &SamplerDescriptor) -> Sampler {
         Sampler {
             context: Arc::clone(&self.context),
-            id: Context::device_create_sampler(&*self.context, &self.id, desc),
+            id: DynContext::device_create_sampler(&*self.context, &self.id, desc),
         }
     }
 
@@ -2262,12 +2324,12 @@ impl Device {
     pub fn create_query_set(&self, desc: &QuerySetDescriptor) -> QuerySet {
         QuerySet {
             context: Arc::clone(&self.context),
-            id: Context::device_create_query_set(&*self.context, &self.id, desc),
+            id: DynContext::device_create_query_set(&*self.context, &self.id, desc),
         }
     }
 
     /// Set a callback for errors that are not handled in error scopes.
-    pub fn on_uncaptured_error(&self, handler: impl UncapturedErrorHandler) {
+    pub fn on_uncaptured_error(&self, handler: Box<dyn UncapturedErrorHandler>) {
         self.context.device_on_uncaptured_error(&self.id, handler);
     }
 
@@ -2283,12 +2345,12 @@ impl Device {
 
     /// Starts frame capture.
     pub fn start_capture(&self) {
-        Context::device_start_capture(&*self.context, &self.id)
+        DynContext::device_start_capture(&*self.context, &self.id)
     }
 
     /// Stops frame capture.
     pub fn stop_capture(&self) {
-        Context::device_stop_capture(&*self.context, &self.id)
+        DynContext::device_stop_capture(&*self.context, &self.id)
     }
 
     /// Apply a callback to this `Device`'s underlying backend device.
@@ -2316,7 +2378,10 @@ impl Device {
         hal_device_callback: F,
     ) -> R {
         self.context
-            .device_as_hal::<A, F, R>(&self.id, hal_device_callback)
+            .as_any()
+            .downcast_ref::<crate::backend::Context>()
+            .unwrap()
+            .device_as_hal::<A, F, R>(self.id.downcast_id(), hal_device_callback)
     }
 }
 
@@ -2517,12 +2582,12 @@ impl Buffer {
     /// Flushes any pending write operations and unmaps the buffer from host memory.
     pub fn unmap(&self) {
         self.map_context.lock().reset();
-        Context::buffer_unmap(&*self.context, &self.id);
+        DynContext::buffer_unmap(&*self.context, &self.id);
     }
 
     /// Destroy the associated native resources as soon as possible.
     pub fn destroy(&self) {
-        Context::buffer_destroy(&*self.context, &self.id);
+        DynContext::buffer_destroy(&*self.context, &self.id);
     }
 
     /// Returns the length of the buffer allocation in bytes.
@@ -2568,12 +2633,12 @@ impl<'a> BufferSlice<'a> {
         };
         mc.initial_range = self.offset..end;
 
-        Context::buffer_map_async(
+        DynContext::buffer_map_async(
             &*self.buffer.context,
             &self.buffer.id,
             mode,
             self.offset..end,
-            callback,
+            Box::new(callback),
         )
     }
 
@@ -2581,7 +2646,7 @@ impl<'a> BufferSlice<'a> {
     /// through [`BufferDescriptor::mapped_at_creation`] or [`BufferSlice::map_async`], will panic.
     pub fn get_mapped_range(&self) -> BufferView<'a> {
         let end = self.buffer.map_context.lock().add(self.offset, self.size);
-        let data = Context::buffer_get_mapped_range(
+        let data = DynContext::buffer_get_mapped_range(
             &*self.buffer.context,
             &self.buffer.id,
             self.offset..end,
@@ -2593,7 +2658,7 @@ impl<'a> BufferSlice<'a> {
     /// through [`BufferDescriptor::mapped_at_creation`] or [`BufferSlice::map_async`], will panic.
     pub fn get_mapped_range_mut(&self) -> BufferViewMut<'a> {
         let end = self.buffer.map_context.lock().add(self.offset, self.size);
-        let data = Context::buffer_get_mapped_range(
+        let data = DynContext::buffer_get_mapped_range(
             &*self.buffer.context,
             &self.buffer.id,
             self.offset..end,
@@ -2627,20 +2692,23 @@ impl Texture {
         hal_texture_callback: F,
     ) {
         self.context
-            .texture_as_hal::<A, F>(&self.id, hal_texture_callback)
+            .as_any()
+            .downcast_ref::<crate::backend::Context>()
+            .unwrap()
+            .texture_as_hal::<A, F>(self.id.downcast_id(), hal_texture_callback)
     }
 
     /// Creates a view of this texture.
     pub fn create_view(&self, desc: &TextureViewDescriptor) -> TextureView {
         TextureView {
             context: Arc::clone(&self.context),
-            id: Context::texture_create_view(&*self.context, &self.id, desc),
+            id: DynContext::texture_create_view(&*self.context, &self.id, desc),
         }
     }
 
     /// Destroy the associated native resources as soon as possible.
     pub fn destroy(&self) {
-        Context::texture_destroy(&*self.context, &self.id);
+        DynContext::texture_destroy(&*self.context, &self.id);
     }
 
     /// Make an `ImageCopyTexture` representing the whole texture.
@@ -2675,7 +2743,7 @@ impl CommandEncoder {
     pub fn finish(mut self) -> CommandBuffer {
         CommandBuffer {
             context: Arc::clone(&self.context),
-            id: Some(Context::command_encoder_finish(
+            id: Some(DynContext::command_encoder_finish(
                 &*self.context,
                 self.id.take().unwrap(),
             )),
@@ -2691,7 +2759,7 @@ impl CommandEncoder {
     ) -> RenderPass<'pass> {
         let id = self.id.as_ref().unwrap();
         RenderPass {
-            id: Context::command_encoder_begin_render_pass(&*self.context, id, desc),
+            id: DynContext::command_encoder_begin_render_pass(&*self.context, id, desc),
             parent: self,
         }
     }
@@ -2702,7 +2770,7 @@ impl CommandEncoder {
     pub fn begin_compute_pass(&mut self, desc: &ComputePassDescriptor) -> ComputePass {
         let id = self.id.as_ref().unwrap();
         ComputePass {
-            id: Context::command_encoder_begin_compute_pass(&*self.context, id, desc),
+            id: DynContext::command_encoder_begin_compute_pass(&*self.context, id, desc),
             parent: self,
         }
     }
@@ -2722,7 +2790,7 @@ impl CommandEncoder {
         destination_offset: BufferAddress,
         copy_size: BufferAddress,
     ) {
-        Context::command_encoder_copy_buffer_to_buffer(
+        DynContext::command_encoder_copy_buffer_to_buffer(
             &*self.context,
             self.id.as_ref().unwrap(),
             &source.id,
@@ -2746,7 +2814,7 @@ impl CommandEncoder {
         destination: ImageCopyTexture,
         copy_size: Extent3d,
     ) {
-        Context::command_encoder_copy_buffer_to_texture(
+        DynContext::command_encoder_copy_buffer_to_texture(
             &*self.context,
             self.id.as_ref().unwrap(),
             source,
@@ -2768,7 +2836,7 @@ impl CommandEncoder {
         destination: ImageCopyBuffer,
         copy_size: Extent3d,
     ) {
-        Context::command_encoder_copy_texture_to_buffer(
+        DynContext::command_encoder_copy_texture_to_buffer(
             &*self.context,
             self.id.as_ref().unwrap(),
             source,
@@ -2790,7 +2858,7 @@ impl CommandEncoder {
         destination: ImageCopyTexture,
         copy_size: Extent3d,
     ) {
-        Context::command_encoder_copy_texture_to_texture(
+        DynContext::command_encoder_copy_texture_to_texture(
             &*self.context,
             self.id.as_ref().unwrap(),
             source,
@@ -2813,7 +2881,7 @@ impl CommandEncoder {
     /// - `CLEAR_TEXTURE` extension not enabled
     /// - Range is out of bounds
     pub fn clear_texture(&mut self, texture: &Texture, subresource_range: &ImageSubresourceRange) {
-        Context::command_encoder_clear_texture(
+        DynContext::command_encoder_clear_texture(
             &*self.context,
             self.id.as_ref().unwrap(),
             texture,
@@ -2833,7 +2901,7 @@ impl CommandEncoder {
         offset: BufferAddress,
         size: Option<BufferSize>,
     ) {
-        Context::command_encoder_clear_buffer(
+        DynContext::command_encoder_clear_buffer(
             &*self.context,
             self.id.as_ref().unwrap(),
             buffer,
@@ -2845,19 +2913,19 @@ impl CommandEncoder {
     /// Inserts debug marker.
     pub fn insert_debug_marker(&mut self, label: &str) {
         let id = self.id.as_ref().unwrap();
-        Context::command_encoder_insert_debug_marker(&*self.context, id, label);
+        DynContext::command_encoder_insert_debug_marker(&*self.context, id, label);
     }
 
     /// Start record commands and group it into debug marker group.
     pub fn push_debug_group(&mut self, label: &str) {
         let id = self.id.as_ref().unwrap();
-        Context::command_encoder_push_debug_group(&*self.context, id, label);
+        DynContext::command_encoder_push_debug_group(&*self.context, id, label);
     }
 
     /// Stops command recording and creates debug group.
     pub fn pop_debug_group(&mut self) {
         let id = self.id.as_ref().unwrap();
-        Context::command_encoder_pop_debug_group(&*self.context, id);
+        DynContext::command_encoder_pop_debug_group(&*self.context, id);
     }
 }
 
@@ -2871,7 +2939,7 @@ impl CommandEncoder {
     /// but timestamps can be subtracted to get the time it takes
     /// for a string of operations to complete.
     pub fn write_timestamp(&mut self, query_set: &QuerySet, query_index: u32) {
-        Context::command_encoder_write_timestamp(
+        DynContext::command_encoder_write_timestamp(
             &*self.context,
             self.id.as_ref().unwrap(),
             &query_set.id,
@@ -2892,7 +2960,7 @@ impl CommandEncoder {
         destination: &Buffer,
         destination_offset: BufferAddress,
     ) {
-        Context::command_encoder_resolve_query_set(
+        DynContext::command_encoder_resolve_query_set(
             &*self.context,
             self.id.as_ref().unwrap(),
             &query_set.id,
@@ -2917,21 +2985,27 @@ impl<'a> RenderPass<'a> {
         bind_group: &'a BindGroup,
         offsets: &[DynamicOffset],
     ) {
-        RenderInner::set_bind_group(&mut self.id, index, &bind_group.id, offsets)
+        DynContext::render_pass_set_bind_group(
+            &*self.parent.context,
+            &mut self.id,
+            index,
+            &bind_group.id,
+            offsets,
+        )
     }
 
     /// Sets the active render pipeline.
     ///
     /// Subsequent draw calls will exhibit the behavior defined by `pipeline`.
     pub fn set_pipeline(&mut self, pipeline: &'a RenderPipeline) {
-        RenderInner::set_pipeline(&mut self.id, &pipeline.id)
+        DynContext::render_pass_set_pipeline(&*self.parent.context, &mut self.id, &pipeline.id)
     }
 
     /// Sets the blend color as used by some of the blending modes.
     ///
     /// Subsequent blending tests will test against this value.
     pub fn set_blend_constant(&mut self, color: Color) {
-        self.id.set_blend_constant(color)
+        DynContext::render_pass_set_blend_constant(&*self.parent.context, &mut self.id, color)
     }
 
     /// Sets the active index buffer.
@@ -2939,7 +3013,8 @@ impl<'a> RenderPass<'a> {
     /// Subsequent calls to [`draw_indexed`](RenderPass::draw_indexed) on this [`RenderPass`] will
     /// use `buffer` as the source index buffer.
     pub fn set_index_buffer(&mut self, buffer_slice: BufferSlice<'a>, index_format: IndexFormat) {
-        RenderInner::set_index_buffer(
+        DynContext::render_pass_set_index_buffer(
+            &*self.parent.context,
             &mut self.id,
             &buffer_slice.buffer.id,
             index_format,
@@ -2959,7 +3034,8 @@ impl<'a> RenderPass<'a> {
     /// [`draw`]: RenderPass::draw
     /// [`draw_indexed`]: RenderPass::draw_indexed
     pub fn set_vertex_buffer(&mut self, slot: u32, buffer_slice: BufferSlice<'a>) {
-        RenderInner::set_vertex_buffer(
+        DynContext::render_pass_set_vertex_buffer(
+            &*self.parent.context,
             &mut self.id,
             slot,
             &buffer_slice.buffer.id,
@@ -2972,43 +3048,63 @@ impl<'a> RenderPass<'a> {
     ///
     /// Subsequent draw calls will discard any fragments that fall outside this region.
     pub fn set_scissor_rect(&mut self, x: u32, y: u32, width: u32, height: u32) {
-        self.id.set_scissor_rect(x, y, width, height);
+        DynContext::render_pass_set_scissor_rect(
+            &*self.parent.context,
+            &mut self.id,
+            x,
+            y,
+            width,
+            height,
+        );
     }
 
     /// Sets the viewport region.
     ///
     /// Subsequent draw calls will draw any fragments in this region.
     pub fn set_viewport(&mut self, x: f32, y: f32, w: f32, h: f32, min_depth: f32, max_depth: f32) {
-        self.id.set_viewport(x, y, w, h, min_depth, max_depth);
+        DynContext::render_pass_set_viewport(
+            &*self.parent.context,
+            &mut self.id,
+            x,
+            y,
+            w,
+            h,
+            min_depth,
+            max_depth,
+        );
     }
 
     /// Sets the stencil reference.
     ///
     /// Subsequent stencil tests will test against this value.
     pub fn set_stencil_reference(&mut self, reference: u32) {
-        self.id.set_stencil_reference(reference);
+        DynContext::render_pass_set_stencil_reference(
+            &*self.parent.context,
+            &mut self.id,
+            reference,
+        );
     }
 
     /// Draws primitives from the active vertex buffer(s).
     ///
     /// The active vertex buffers can be set with [`RenderPass::set_vertex_buffer`].
     pub fn draw(&mut self, vertices: Range<u32>, instances: Range<u32>) {
-        RenderInner::draw(&mut self.id, vertices, instances)
+        DynContext::render_pass_draw(&*self.parent.context, &mut self.id, vertices, instances)
     }
 
     /// Inserts debug marker.
     pub fn insert_debug_marker(&mut self, label: &str) {
-        self.id.insert_debug_marker(label);
+        DynContext::render_pass_insert_debug_marker(&*self.parent.context, &mut self.id, label);
     }
 
     /// Start record commands and group it into debug marker group.
     pub fn push_debug_group(&mut self, label: &str) {
-        self.id.push_debug_group(label);
+        DynContext::render_pass_push_debug_group(&*self.parent.context, &mut self.id, label);
     }
 
     /// Stops command recording and creates debug group.
     pub fn pop_debug_group(&mut self) {
-        self.id.pop_debug_group();
+        DynContext::render_pass_pop_debug_group(&*self.parent.context, &mut self.id);
     }
 
     /// Draws indexed primitives using the active index buffer and the active vertex buffers.
@@ -3016,7 +3112,13 @@ impl<'a> RenderPass<'a> {
     /// The active index buffer can be set with [`RenderPass::set_index_buffer`], while the active
     /// vertex buffers can be set with [`RenderPass::set_vertex_buffer`].
     pub fn draw_indexed(&mut self, indices: Range<u32>, base_vertex: i32, instances: Range<u32>) {
-        RenderInner::draw_indexed(&mut self.id, indices, base_vertex, instances);
+        DynContext::render_pass_draw_indexed(
+            &*self.parent.context,
+            &mut self.id,
+            indices,
+            base_vertex,
+            instances,
+        );
     }
 
     /// Draws primitives from the active vertex buffer(s) based on the contents of the `indirect_buffer`.
@@ -3025,7 +3127,12 @@ impl<'a> RenderPass<'a> {
     ///
     /// The structure expected in `indirect_buffer` must conform to [`DrawIndirect`](crate::util::DrawIndirect).
     pub fn draw_indirect(&mut self, indirect_buffer: &'a Buffer, indirect_offset: BufferAddress) {
-        self.id.draw_indirect(&indirect_buffer.id, indirect_offset);
+        DynContext::render_pass_draw_indirect(
+            &*self.parent.context,
+            &mut self.id,
+            &indirect_buffer.id,
+            indirect_offset,
+        );
     }
 
     /// Draws indexed primitives using the active index buffer and the active vertex buffers,
@@ -3040,15 +3147,25 @@ impl<'a> RenderPass<'a> {
         indirect_buffer: &'a Buffer,
         indirect_offset: BufferAddress,
     ) {
-        self.id
-            .draw_indexed_indirect(&indirect_buffer.id, indirect_offset);
+        DynContext::render_pass_draw_indexed_indirect(
+            &*self.parent.context,
+            &mut self.id,
+            &indirect_buffer.id,
+            indirect_offset,
+        );
     }
 
     /// Execute a [render bundle][RenderBundle], which is a set of pre-recorded commands
     /// that can be run together.
-    pub fn execute_bundles<I: IntoIterator<Item = &'a RenderBundle>>(&mut self, render_bundles: I) {
-        self.id
-            .execute_bundles(render_bundles.into_iter().map(|rb| &rb.id))
+    pub fn execute_bundles<I: IntoIterator<Item = &'a RenderBundle> + 'a>(
+        &mut self,
+        render_bundles: I,
+    ) {
+        DynContext::render_pass_execute_bundles(
+            &*self.parent.context,
+            &mut self.id,
+            Box::new(render_bundles.into_iter().map(|rb| &rb.id)),
+        )
     }
 }
 
@@ -3068,8 +3185,13 @@ impl<'a> RenderPass<'a> {
         indirect_offset: BufferAddress,
         count: u32,
     ) {
-        self.id
-            .multi_draw_indirect(&indirect_buffer.id, indirect_offset, count);
+        DynContext::render_pass_multi_draw_indirect(
+            &*self.parent.context,
+            &mut self.id,
+            &indirect_buffer.id,
+            indirect_offset,
+            count,
+        );
     }
 
     /// Dispatches multiple draw calls from the active index buffer and the active vertex buffers,
@@ -3087,8 +3209,13 @@ impl<'a> RenderPass<'a> {
         indirect_offset: BufferAddress,
         count: u32,
     ) {
-        self.id
-            .multi_draw_indexed_indirect(&indirect_buffer.id, indirect_offset, count);
+        DynContext::render_pass_multi_draw_indexed_indirect(
+            &*self.parent.context,
+            &mut self.id,
+            &indirect_buffer.id,
+            indirect_offset,
+            count,
+        );
     }
 }
 
@@ -3122,7 +3249,9 @@ impl<'a> RenderPass<'a> {
         count_offset: BufferAddress,
         max_count: u32,
     ) {
-        self.id.multi_draw_indirect_count(
+        DynContext::render_pass_multi_draw_indirect_count(
+            &*self.parent.context,
+            &mut self.id,
             &indirect_buffer.id,
             indirect_offset,
             &count_buffer.id,
@@ -3161,7 +3290,9 @@ impl<'a> RenderPass<'a> {
         count_offset: BufferAddress,
         max_count: u32,
     ) {
-        self.id.multi_draw_indexed_indirect_count(
+        DynContext::render_pass_multi_draw_indexed_indirect_count(
+            &*self.parent.context,
+            &mut self.id,
             &indirect_buffer.id,
             indirect_offset,
             &count_buffer.id,
@@ -3214,7 +3345,13 @@ impl<'a> RenderPass<'a> {
     ///
     /// [`PushConstant`]: https://docs.rs/naga/latest/naga/enum.StorageClass.html#variant.PushConstant
     pub fn set_push_constants(&mut self, stages: ShaderStages, offset: u32, data: &[u8]) {
-        self.id.set_push_constants(stages, offset, data);
+        DynContext::render_pass_set_push_constants(
+            &*self.parent.context,
+            &mut self.id,
+            stages,
+            offset,
+            data,
+        );
     }
 }
 
@@ -3228,7 +3365,12 @@ impl<'a> RenderPass<'a> {
     /// but timestamps can be subtracted to get the time it takes
     /// for a string of operations to complete.
     pub fn write_timestamp(&mut self, query_set: &QuerySet, query_index: u32) {
-        self.id.write_timestamp(&query_set.id, query_index)
+        DynContext::render_pass_write_timestamp(
+            &*self.parent.context,
+            &mut self.id,
+            &query_set.id,
+            query_index,
+        )
     }
 }
 
@@ -3237,14 +3379,18 @@ impl<'a> RenderPass<'a> {
     /// Start a pipeline statistics query on this render pass. It can be ended with
     /// `end_pipeline_statistics_query`. Pipeline statistics queries may not be nested.
     pub fn begin_pipeline_statistics_query(&mut self, query_set: &QuerySet, query_index: u32) {
-        self.id
-            .begin_pipeline_statistics_query(&query_set.id, query_index);
+        DynContext::render_pass_begin_pipeline_statistics_query(
+            &*self.parent.context,
+            &mut self.id,
+            &query_set.id,
+            query_index,
+        );
     }
 
     /// End the pipeline statistics query on this render pass. It can be started with
     /// `begin_pipeline_statistics_query`. Pipeline statistics queries may not be nested.
     pub fn end_pipeline_statistics_query(&mut self) {
-        self.id.end_pipeline_statistics_query();
+        DynContext::render_pass_end_pipeline_statistics_query(&*self.parent.context, &mut self.id);
     }
 }
 
@@ -3272,34 +3418,40 @@ impl<'a> ComputePass<'a> {
         bind_group: &'a BindGroup,
         offsets: &[DynamicOffset],
     ) {
-        ComputePassInner::set_bind_group(&mut self.id, index, &bind_group.id, offsets);
+        DynContext::compute_pass_set_bind_group(
+            &*self.parent.context,
+            &mut self.id,
+            index,
+            &bind_group.id,
+            offsets,
+        );
     }
 
     /// Sets the active compute pipeline.
     pub fn set_pipeline(&mut self, pipeline: &'a ComputePipeline) {
-        ComputePassInner::set_pipeline(&mut self.id, &pipeline.id);
+        DynContext::compute_pass_set_pipeline(&*self.parent.context, &mut self.id, &pipeline.id);
     }
 
     /// Inserts debug marker.
     pub fn insert_debug_marker(&mut self, label: &str) {
-        self.id.insert_debug_marker(label);
+        DynContext::compute_pass_insert_debug_marker(&*self.parent.context, &mut self.id, label);
     }
 
     /// Start record commands and group it into debug marker group.
     pub fn push_debug_group(&mut self, label: &str) {
-        self.id.push_debug_group(label);
+        DynContext::compute_pass_push_debug_group(&*self.parent.context, &mut self.id, label);
     }
 
     /// Stops command recording and creates debug group.
     pub fn pop_debug_group(&mut self) {
-        self.id.pop_debug_group();
+        DynContext::compute_pass_pop_debug_group(&*self.parent.context, &mut self.id);
     }
 
     /// Dispatches compute work operations.
     ///
     /// `x`, `y` and `z` denote the number of work groups to dispatch in each dimension.
     pub fn dispatch_workgroups(&mut self, x: u32, y: u32, z: u32) {
-        ComputePassInner::dispatch_workgroups(&mut self.id, x, y, z);
+        DynContext::compute_pass_dispatch_workgroups(&*self.parent.context, &mut self.id, x, y, z);
     }
 
     /// Dispatches compute work operations, based on the contents of the `indirect_buffer`.
@@ -3310,7 +3462,8 @@ impl<'a> ComputePass<'a> {
         indirect_buffer: &'a Buffer,
         indirect_offset: BufferAddress,
     ) {
-        ComputePassInner::dispatch_workgroups_indirect(
+        DynContext::compute_pass_dispatch_workgroups_indirect(
+            &*self.parent.context,
             &mut self.id,
             &indirect_buffer.id,
             indirect_offset,
@@ -3329,7 +3482,12 @@ impl<'a> ComputePass<'a> {
     /// For example, if `offset` is `4` and `data` is eight bytes long, this
     /// call will write `data` to bytes `4..12` of push constant storage.
     pub fn set_push_constants(&mut self, offset: u32, data: &[u8]) {
-        self.id.set_push_constants(offset, data);
+        DynContext::compute_pass_set_push_constants(
+            &*self.parent.context,
+            &mut self.id,
+            offset,
+            data,
+        );
     }
 }
 
@@ -3342,7 +3500,12 @@ impl<'a> ComputePass<'a> {
     /// but timestamps can be subtracted to get the time it takes
     /// for a string of operations to complete.
     pub fn write_timestamp(&mut self, query_set: &QuerySet, query_index: u32) {
-        self.id.write_timestamp(&query_set.id, query_index)
+        DynContext::compute_pass_write_timestamp(
+            &*self.parent.context,
+            &mut self.id,
+            &query_set.id,
+            query_index,
+        )
     }
 }
 
@@ -3351,14 +3514,18 @@ impl<'a> ComputePass<'a> {
     /// Start a pipeline statistics query on this render pass. It can be ended with
     /// `end_pipeline_statistics_query`. Pipeline statistics queries may not be nested.
     pub fn begin_pipeline_statistics_query(&mut self, query_set: &QuerySet, query_index: u32) {
-        self.id
-            .begin_pipeline_statistics_query(&query_set.id, query_index);
+        DynContext::compute_pass_begin_pipeline_statistics_query(
+            &*self.parent.context,
+            &mut self.id,
+            &query_set.id,
+            query_index,
+        );
     }
 
     /// End the pipeline statistics query on this render pass. It can be started with
     /// `begin_pipeline_statistics_query`. Pipeline statistics queries may not be nested.
     pub fn end_pipeline_statistics_query(&mut self) {
-        self.id.end_pipeline_statistics_query();
+        DynContext::compute_pass_end_pipeline_statistics_query(&*self.parent.context, &mut self.id);
     }
 }
 
@@ -3378,7 +3545,7 @@ impl<'a> RenderBundleEncoder<'a> {
     pub fn finish(self, desc: &RenderBundleDescriptor) -> RenderBundle {
         RenderBundle {
             context: Arc::clone(&self.context),
-            id: Context::render_bundle_encoder_finish(&*self.context, self.id, desc),
+            id: DynContext::render_bundle_encoder_finish(&*self.context, self.id, desc),
         }
     }
 
@@ -3392,14 +3559,24 @@ impl<'a> RenderBundleEncoder<'a> {
         bind_group: &'a BindGroup,
         offsets: &[DynamicOffset],
     ) {
-        RenderInner::set_bind_group(&mut self.id, index, &bind_group.id, offsets)
+        DynContext::render_bundle_encoder_set_bind_group(
+            &*self.parent.context,
+            &mut self.id,
+            index,
+            &bind_group.id,
+            offsets,
+        )
     }
 
     /// Sets the active render pipeline.
     ///
     /// Subsequent draw calls will exhibit the behavior defined by `pipeline`.
     pub fn set_pipeline(&mut self, pipeline: &'a RenderPipeline) {
-        RenderInner::set_pipeline(&mut self.id, &pipeline.id)
+        DynContext::render_bundle_encoder_set_pipeline(
+            &*self.parent.context,
+            &mut self.id,
+            &pipeline.id,
+        )
     }
 
     /// Sets the active index buffer.
@@ -3407,7 +3584,8 @@ impl<'a> RenderBundleEncoder<'a> {
     /// Subsequent calls to [`draw_indexed`](RenderBundleEncoder::draw_indexed) on this [`RenderBundleEncoder`] will
     /// use `buffer` as the source index buffer.
     pub fn set_index_buffer(&mut self, buffer_slice: BufferSlice<'a>, index_format: IndexFormat) {
-        RenderInner::set_index_buffer(
+        DynContext::render_bundle_encoder_set_index_buffer(
+            &*self.parent.context,
             &mut self.id,
             &buffer_slice.buffer.id,
             index_format,
@@ -3427,7 +3605,8 @@ impl<'a> RenderBundleEncoder<'a> {
     /// [`draw`]: RenderBundleEncoder::draw
     /// [`draw_indexed`]: RenderBundleEncoder::draw_indexed
     pub fn set_vertex_buffer(&mut self, slot: u32, buffer_slice: BufferSlice<'a>) {
-        RenderInner::set_vertex_buffer(
+        DynContext::render_bundle_encoder_set_vertex_buffer(
+            &*self.parent.context,
             &mut self.id,
             slot,
             &buffer_slice.buffer.id,
@@ -3440,7 +3619,12 @@ impl<'a> RenderBundleEncoder<'a> {
     ///
     /// The active vertex buffers can be set with [`RenderBundleEncoder::set_vertex_buffer`].
     pub fn draw(&mut self, vertices: Range<u32>, instances: Range<u32>) {
-        RenderInner::draw(&mut self.id, vertices, instances)
+        DynContext::render_bundle_encoder_draw(
+            &*self.parent.context,
+            &mut self.id,
+            vertices,
+            instances,
+        )
     }
 
     /// Draws indexed primitives using the active index buffer and the active vertex buffers.
@@ -3448,7 +3632,13 @@ impl<'a> RenderBundleEncoder<'a> {
     /// The active index buffer can be set with [`RenderBundleEncoder::set_index_buffer`], while the active
     /// vertex buffers can be set with [`RenderBundleEncoder::set_vertex_buffer`].
     pub fn draw_indexed(&mut self, indices: Range<u32>, base_vertex: i32, instances: Range<u32>) {
-        RenderInner::draw_indexed(&mut self.id, indices, base_vertex, instances);
+        DynContext::render_bundle_encoder_draw_indexed(
+            &*self.parent.context,
+            &mut self.id,
+            indices,
+            base_vertex,
+            instances,
+        );
     }
 
     /// Draws primitives from the active vertex buffer(s) based on the contents of the `indirect_buffer`.
@@ -3457,7 +3647,12 @@ impl<'a> RenderBundleEncoder<'a> {
     ///
     /// The structure expected in `indirect_buffer` must conform to [`DrawIndirect`](crate::util::DrawIndirect).
     pub fn draw_indirect(&mut self, indirect_buffer: &'a Buffer, indirect_offset: BufferAddress) {
-        self.id.draw_indirect(&indirect_buffer.id, indirect_offset);
+        DynContext::render_bundle_encoder_draw_indirect(
+            &*self.parent.context,
+            &mut self.id,
+            &indirect_buffer.id,
+            indirect_offset,
+        );
     }
 
     /// Draws indexed primitives using the active index buffer and the active vertex buffers,
@@ -3472,8 +3667,12 @@ impl<'a> RenderBundleEncoder<'a> {
         indirect_buffer: &'a Buffer,
         indirect_offset: BufferAddress,
     ) {
-        self.id
-            .draw_indexed_indirect(&indirect_buffer.id, indirect_offset);
+        DynContext::render_bundle_encoder_draw_indexed_indirect(
+            &*self.parent.context,
+            &mut self.id,
+            &indirect_buffer.id,
+            indirect_offset,
+        );
     }
 }
 
@@ -3508,7 +3707,13 @@ impl<'a> RenderBundleEncoder<'a> {
     /// You would need to upload this in three set_push_constants calls. First for the `Vertex` only range 0..4, second
     /// for the `Vertex | Fragment` range 4..8, third for the `Fragment` range 8..12.
     pub fn set_push_constants(&mut self, stages: ShaderStages, offset: u32, data: &[u8]) {
-        self.id.set_push_constants(stages, offset, data);
+        DynContext::render_bundle_encoder_set_push_constants(
+            &*self.parent.context,
+            &mut self.id,
+            stages,
+            offset,
+            data,
+        );
     }
 }
 
@@ -3517,7 +3722,7 @@ pub struct QueueWriteBufferView<'a> {
     queue: &'a Queue,
     buffer: &'a Buffer,
     offset: BufferAddress,
-    inner: QueueWriteBuffer,
+    inner: Box<dyn context::QueueWriteBuffer>,
 }
 static_assertions::assert_impl_all!(QueueWriteBufferView: Send, Sync);
 
@@ -3531,18 +3736,18 @@ impl<'a> std::ops::Deref for QueueWriteBufferView<'a> {
 
 impl<'a> std::ops::DerefMut for QueueWriteBufferView<'a> {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.inner
+        self.inner.slice_mut()
     }
 }
 
 impl<'a> Drop for QueueWriteBufferView<'a> {
     fn drop(&mut self) {
-        Context::queue_write_staging_buffer(
+        DynContext::queue_write_staging_buffer(
             &*self.queue.context,
             &self.queue.id,
             &self.buffer.id,
             self.offset,
-            &self.inner,
+            &*self.inner,
         );
     }
 }
@@ -3556,7 +3761,7 @@ impl Queue {
     ///
     /// This method fails if `data` overruns the size of `buffer` starting at `offset`.
     pub fn write_buffer(&self, buffer: &Buffer, offset: BufferAddress, data: &[u8]) {
-        Context::queue_write_buffer(&*self.context, &self.id, &buffer.id, offset, data)
+        DynContext::queue_write_buffer(&*self.context, &self.id, &buffer.id, offset, data)
     }
 
     /// Schedule a data write into `buffer` starting at `offset` via the returned
@@ -3579,8 +3784,9 @@ impl Queue {
         offset: BufferAddress,
         size: BufferSize,
     ) -> QueueWriteBufferView<'a> {
-        Context::queue_validate_write_buffer(&*self.context, &self.id, &buffer.id, offset, size);
-        let staging_buffer = Context::queue_create_staging_buffer(&*self.context, &self.id, size);
+        DynContext::queue_validate_write_buffer(&*self.context, &self.id, &buffer.id, offset, size);
+        let staging_buffer =
+            DynContext::queue_create_staging_buffer(&*self.context, &self.id, size);
         QueueWriteBufferView {
             queue: self,
             buffer,
@@ -3603,7 +3809,7 @@ impl Queue {
         data_layout: ImageDataLayout,
         size: Extent3d,
     ) {
-        Context::queue_write_texture(&*self.context, &self.id, texture, data, data_layout, size)
+        DynContext::queue_write_texture(&*self.context, &self.id, texture, data, data_layout, size)
     }
 
     /// Submits a series of finished command buffers for execution.
@@ -3611,22 +3817,24 @@ impl Queue {
         &self,
         command_buffers: I,
     ) -> SubmissionIndex {
-        let raw = Context::queue_submit(
+        let raw = DynContext::queue_submit(
             &*self.context,
             &self.id,
-            command_buffers
-                .into_iter()
-                .map(|mut comb| comb.id.take().unwrap()),
+            Box::new(
+                command_buffers
+                    .into_iter()
+                    .map(|mut comb| comb.id.take().unwrap()),
+            ),
         );
 
-        SubmissionIndex(raw)
+        SubmissionIndex(Arc::new(raw))
     }
 
     /// Gets the amount of nanoseconds each tick of a timestamp query represents.
     ///
     /// Returns zero if timestamp queries are unsupported.
     pub fn get_timestamp_period(&self) -> f32 {
-        Context::queue_get_timestamp_period(&*self.context, &self.id)
+        DynContext::queue_get_timestamp_period(&*self.context, &self.id)
     }
 
     /// Registers a callback when the previous call to submit finishes running on the gpu. This callback
@@ -3641,7 +3849,7 @@ impl Queue {
     /// call to the function will not complete until the callback returns, so prefer keeping callbacks short
     /// and used to set flags, send messages, etc.
     pub fn on_submitted_work_done(&self, callback: impl FnOnce() + Send + 'static) {
-        Context::queue_on_submitted_work_done(&*self.context, &self.id, Box::new(callback))
+        DynContext::queue_on_submitted_work_done(&*self.context, &self.id, Box::new(callback))
     }
 }
 
@@ -3651,14 +3859,14 @@ impl SurfaceTexture {
     /// Needs to be called after any work on the texture is scheduled via [`Queue::submit`].
     pub fn present(mut self) {
         self.presented = true;
-        Context::surface_present(&*self.texture.context, &self.texture.id, &self.detail);
+        DynContext::surface_present(&*self.texture.context, &self.texture.id, &self.detail);
     }
 }
 
 impl Drop for SurfaceTexture {
     fn drop(&mut self) {
         if !self.presented && !thread::panicking() {
-            Context::surface_texture_discard(
+            DynContext::surface_texture_discard(
                 &*self.texture.context,
                 &self.texture.id,
                 &self.detail,
@@ -3673,21 +3881,21 @@ impl Surface {
     ///
     /// Returns an empty vector if the surface is incompatible with the adapter.
     pub fn get_supported_formats(&self, adapter: &Adapter) -> Vec<TextureFormat> {
-        Context::surface_get_supported_formats(&*self.context, &self.id, &adapter.id)
+        DynContext::surface_get_supported_formats(&*self.context, &self.id, &adapter.id)
     }
 
     /// Returns a vec of supported presentation modes to use for the [`Surface`] with this adapter.
     ///
     /// Returns an empty vector if the surface is incompatible with the adapter.
     pub fn get_supported_present_modes(&self, adapter: &Adapter) -> Vec<PresentMode> {
-        Context::surface_get_supported_present_modes(&*self.context, &self.id, &adapter.id)
+        DynContext::surface_get_supported_present_modes(&*self.context, &self.id, &adapter.id)
     }
 
     /// Returns a vec of supported alpha modes to use for the [`Surface`] with this adapter.
     ///
     /// Will return at least one element, CompositeAlphaMode::Opaque or CompositeAlphaMode::Inherit.
     pub fn get_supported_alpha_modes(&self, adapter: &Adapter) -> Vec<CompositeAlphaMode> {
-        Context::surface_get_supported_alpha_modes(&*self.context, &self.id, &adapter.id)
+        DynContext::surface_get_supported_alpha_modes(&*self.context, &self.id, &adapter.id)
     }
 
     /// Initializes [`Surface`] for presentation.
@@ -3697,7 +3905,7 @@ impl Surface {
     /// - A old [`SurfaceTexture`] is still alive referencing an old surface.
     /// - Texture format requested is unsupported on the surface.
     pub fn configure(&self, device: &Device, config: &SurfaceConfiguration) {
-        Context::surface_configure(&*self.context, &self.id, &device.id, config)
+        DynContext::surface_configure(&*self.context, &self.id, &device.id, config)
     }
 
     /// Returns the next texture to be presented by the swapchain for drawing.
@@ -3710,7 +3918,7 @@ impl Surface {
     /// recreating the swapchain will panic.
     pub fn get_current_texture(&self) -> Result<SurfaceTexture, SurfaceError> {
         let (texture_id, status, detail) =
-            Context::surface_get_current_texture(&*self.context, &self.id);
+            DynContext::surface_get_current_texture(&*self.context, &self.id);
 
         let suboptimal = match status {
             SurfaceStatus::Good => false,

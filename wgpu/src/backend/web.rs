@@ -2,6 +2,7 @@
 
 use js_sys::Promise;
 use std::{
+    any::Any,
     cell::RefCell,
     fmt,
     future::Future,
@@ -11,6 +12,8 @@ use std::{
     task::{self, Poll},
 };
 use wasm_bindgen::{prelude::*, JsCast};
+
+use crate::{context::QueueWriteBuffer, UncapturedErrorHandler};
 
 // We need to make a wrapper for some of the handle types returned by the web backend to make them
 // implement `Send` and `Sync` to match native.
@@ -816,7 +819,8 @@ fn map_texture_view_dimension(
 }
 
 fn map_buffer_copy_view(view: crate::ImageCopyBuffer) -> web_sys::GpuImageCopyBuffer {
-    let mut mapped = web_sys::GpuImageCopyBuffer::new(&view.buffer.id.0);
+    let mut mapped =
+        web_sys::GpuImageCopyBuffer::new(&view.buffer.id.downcast_id::<Sendable<_>>().0);
     if let Some(bytes_per_row) = view.layout.bytes_per_row {
         mapped.bytes_per_row(bytes_per_row.get());
     }
@@ -828,7 +832,8 @@ fn map_buffer_copy_view(view: crate::ImageCopyBuffer) -> web_sys::GpuImageCopyBu
 }
 
 fn map_texture_copy_view(view: crate::ImageCopyTexture) -> web_sys::GpuImageCopyTexture {
-    let mut mapped = web_sys::GpuImageCopyTexture::new(&view.texture.id.0);
+    let mut mapped =
+        web_sys::GpuImageCopyTexture::new(&view.texture.id.downcast_id::<Sendable<_>>().0);
     mapped.mip_level(view.mip_level);
     mapped.origin(&map_origin_3d(view.origin));
     mapped
@@ -1511,8 +1516,9 @@ impl crate::Context for Context {
                         offset,
                         size,
                     }) => {
-                        let mut mapped_buffer_binding =
-                            web_sys::GpuBufferBinding::new(&buffer.id.0);
+                        let mut mapped_buffer_binding = web_sys::GpuBufferBinding::new(
+                            &buffer.id.downcast_id::<Sendable<_>>().0,
+                        );
                         mapped_buffer_binding.offset(offset as f64);
                         if let Some(s) = size {
                             mapped_buffer_binding.size(s.get() as f64);
@@ -1522,13 +1528,25 @@ impl crate::Context for Context {
                     crate::BindingResource::BufferArray(..) => {
                         panic!("Web backend does not support arrays of buffers")
                     }
-                    crate::BindingResource::Sampler(sampler) => JsValue::from(sampler.id.0.clone()),
+                    crate::BindingResource::Sampler(sampler) => JsValue::from(
+                        sampler
+                            .id
+                            .downcast_id::<Sendable<Self::SamplerId>>()
+                            .0
+                            .clone()
+                            .0,
+                    ),
                     crate::BindingResource::SamplerArray(..) => {
                         panic!("Web backend does not support arrays of samplers")
                     }
-                    crate::BindingResource::TextureView(texture_view) => {
-                        JsValue::from(texture_view.id.0.clone())
-                    }
+                    crate::BindingResource::TextureView(texture_view) => JsValue::from(
+                        texture_view
+                            .id
+                            .downcast_id::<Sendable<Self::TextureViewId>>()
+                            .0
+                            .clone()
+                            .0,
+                    ),
                     crate::BindingResource::TextureViewArray(..) => {
                         panic!("Web backend does not support BINDING_INDEXING extension")
                     }
@@ -1538,8 +1556,10 @@ impl crate::Context for Context {
             })
             .collect::<js_sys::Array>();
 
-        let mut mapped_desc =
-            web_sys::GpuBindGroupDescriptor::new(&mapped_entries, &desc.layout.id.0);
+        let mut mapped_desc = web_sys::GpuBindGroupDescriptor::new(
+            &mapped_entries,
+            desc.layout.id.downcast_id::<Sendable<_>>().0,
+        );
         if let Some(label) = desc.label {
             mapped_desc.label(label);
         }
@@ -1554,7 +1574,13 @@ impl crate::Context for Context {
         let temp_layouts = desc
             .bind_group_layouts
             .iter()
-            .map(|bgl| bgl.id.0.clone())
+            .map(|bgl| {
+                bgl.id
+                    .downcast_id::<Sendable<Self::BindGroupLayoutId>>()
+                    .0
+                    .clone()
+                    .0
+            })
             .collect::<js_sys::Array>();
         let mut mapped_desc = web_sys::GpuPipelineLayoutDescriptor::new(&temp_layouts);
         if let Some(label) = desc.label {
@@ -1568,8 +1594,10 @@ impl crate::Context for Context {
         device: &Self::DeviceId,
         desc: &crate::RenderPipelineDescriptor,
     ) -> Self::RenderPipelineId {
-        let mut mapped_vertex_state =
-            web_sys::GpuVertexState::new(desc.vertex.entry_point, &desc.vertex.module.id.0);
+        let mut mapped_vertex_state = web_sys::GpuVertexState::new(
+            desc.vertex.entry_point,
+            desc.vertex.module.id.downcast_id::<Sendable<_>>().0,
+        );
 
         let buffers = desc
             .vertex
@@ -1602,7 +1630,7 @@ impl crate::Context for Context {
         let auto_layout = wasm_bindgen::JsValue::from(web_sys::GpuAutoLayoutMode::Auto);
         let mut mapped_desc = web_sys::GpuRenderPipelineDescriptor::new(
             match desc.layout {
-                Some(layout) => &layout.id.0,
+                Some(layout) => layout.id.downcast_id::<Sendable<_>>().0,
                 None => &auto_layout,
             },
             &mapped_vertex_state,
@@ -1637,8 +1665,11 @@ impl crate::Context for Context {
                     None => wasm_bindgen::JsValue::null(),
                 })
                 .collect::<js_sys::Array>();
-            let mapped_fragment_desc =
-                web_sys::GpuFragmentState::new(frag.entry_point, &frag.module.id.0, &targets);
+            let mapped_fragment_desc = web_sys::GpuFragmentState::new(
+                frag.entry_point,
+                frag.module.id.downcast_id::<Sendable<_>>().0,
+                &targets,
+            );
             mapped_desc.fragment(&mapped_fragment_desc);
         }
 
@@ -1659,12 +1690,14 @@ impl crate::Context for Context {
         device: &Self::DeviceId,
         desc: &crate::ComputePipelineDescriptor,
     ) -> Self::ComputePipelineId {
-        let mapped_compute_stage =
-            web_sys::GpuProgrammableStage::new(desc.entry_point, &desc.module.id.0);
+        let mapped_compute_stage = web_sys::GpuProgrammableStage::new(
+            desc.entry_point,
+            desc.module.id.downcast_id::<Sendable<_>>().0,
+        );
         let auto_layout = wasm_bindgen::JsValue::from(web_sys::GpuAutoLayoutMode::Auto);
         let mut mapped_desc = web_sys::GpuComputePipelineDescriptor::new(
             match desc.layout {
-                Some(layout) => &layout.id.0,
+                Some(layout) => layout.id.downcast_id::<Sendable<_>>().0,
                 None => &auto_layout,
             },
             &mapped_compute_stage,
@@ -1792,7 +1825,7 @@ impl crate::Context for Context {
     fn device_on_uncaptured_error(
         &self,
         device: &Self::DeviceId,
-        handler: impl crate::UncapturedErrorHandler,
+        handler: Box<dyn UncapturedErrorHandler>,
     ) {
         let f = Closure::wrap(Box::new(move |event: web_sys::GpuUncapturedErrorEvent| {
             let error = crate::Error::from_js(event.error().value_of());
@@ -1820,15 +1853,13 @@ impl crate::Context for Context {
         )
     }
 
-    fn buffer_map_async<F>(
+    fn buffer_map_async(
         &self,
         buffer: &Self::BufferId,
         mode: crate::MapMode,
         range: Range<wgt::BufferAddress>,
-        callback: F,
-    ) where
-        F: FnOnce(Result<(), crate::BufferAsyncError>) + Send + 'static,
-    {
+        callback: Box<dyn FnOnce(Result<(), crate::BufferAsyncError>) + Send + 'static>,
+    ) {
         let map_promise = buffer.0.map_async_with_f64_and_f64(
             map_map_mode(mode),
             range.start as f64,
@@ -2076,13 +2107,14 @@ impl crate::Context for Context {
                     let mut mapped_color_attachment = web_sys::GpuRenderPassColorAttachment::new(
                         load_value,
                         map_store_op(ca.ops.store),
-                        &ca.view.id.0,
+                        ca.view.id.downcast_id::<Sendable<_>>().0,
                     );
                     if let Some(cv) = clear_value {
                         mapped_color_attachment.clear_value(&cv);
                     }
                     if let Some(rt) = ca.resolve_target {
-                        mapped_color_attachment.resolve_target(&rt.id.0);
+                        mapped_color_attachment
+                            .resolve_target(rt.id.downcast_id::<Sendable<_>>().0);
                     }
                     mapped_color_attachment.store_op(map_store_op(ca.ops.store));
 
@@ -2128,7 +2160,9 @@ impl crate::Context for Context {
                 None => (web_sys::GpuLoadOp::Load, web_sys::GpuStoreOp::Store),
             };
             let mut mapped_depth_stencil_attachment =
-                web_sys::GpuRenderPassDepthStencilAttachment::new(&dsa.view.id.0);
+                web_sys::GpuRenderPassDepthStencilAttachment::new(
+                    dsa.view.id.downcast_id::<Sendable<_>>().0,
+                );
             mapped_depth_stencil_attachment.depth_clear_value(depth_clear_value);
             mapped_depth_stencil_attachment.depth_load_op(depth_load_op);
             mapped_depth_stencil_attachment.depth_store_op(depth_store_op);
@@ -2271,8 +2305,10 @@ impl crate::Context for Context {
         &self,
         _queue: &Self::QueueId,
         size: wgt::BufferSize,
-    ) -> QueueWriteBuffer {
-        QueueWriteBuffer(vec![0; size.get() as usize].into_boxed_slice())
+    ) -> Box<dyn QueueWriteBuffer> {
+        Box::new(WebQueueWriteBuffer(
+            vec![0; size.get() as usize].into_boxed_slice(),
+        ))
     }
 
     fn queue_write_staging_buffer(
@@ -2280,8 +2316,13 @@ impl crate::Context for Context {
         queue: &Self::QueueId,
         buffer: &Self::BufferId,
         offset: wgt::BufferAddress,
-        staging_buffer: &QueueWriteBuffer,
+        staging_buffer: &dyn QueueWriteBuffer,
     ) {
+        let staging_buffer = staging_buffer
+            .as_any()
+            .downcast_ref::<WebQueueWriteBuffer>()
+            .unwrap()
+            .slice();
         self.queue_write_buffer(queue, buffer, offset, staging_buffer)
     }
 
@@ -2351,19 +2392,19 @@ impl crate::Context for Context {
 pub(crate) type SurfaceOutputDetail = ();
 
 #[derive(Debug)]
-pub struct QueueWriteBuffer(Box<[u8]>);
+pub struct WebQueueWriteBuffer(Box<[u8]>);
 
-impl std::ops::Deref for QueueWriteBuffer {
-    type Target = [u8];
-
-    fn deref(&self) -> &Self::Target {
-        panic!("QueueWriteBuffer is write-only!");
+impl QueueWriteBuffer for WebQueueWriteBuffer {
+    fn slice(&self) -> &[u8] {
+        &self.0
     }
-}
 
-impl std::ops::DerefMut for QueueWriteBuffer {
-    fn deref_mut(&mut self) -> &mut Self::Target {
+    fn slice_mut(&mut self) -> &mut [u8] {
         &mut self.0
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
     }
 }
 
