@@ -81,9 +81,10 @@ impl crate::Instance<Api> for Instance {
 
     unsafe fn create_surface(
         &self,
-        has_handle: &impl raw_window_handle::HasRawWindowHandle,
+        _display_handle: raw_window_handle::RawDisplayHandle,
+        window_handle: raw_window_handle::RawWindowHandle,
     ) -> Result<Surface, crate::InstanceError> {
-        match has_handle.raw_window_handle() {
+        match window_handle {
             #[cfg(target_os = "ios")]
             raw_window_handle::RawWindowHandle::UiKit(handle) => {
                 let _ = &self.managed_metal_layer_delegate;
@@ -115,6 +116,8 @@ impl crate::Instance<Api> for Instance {
                         vendor: 0,
                         device: 0,
                         device_type: shared.private_caps.device_type(),
+                        driver: String::new(),
+                        driver_info: String::new(),
                         backend: wgt::Backend::Metal,
                     },
                     features: shared.private_caps.features(),
