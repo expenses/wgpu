@@ -108,7 +108,7 @@ impl DownloadBuffer {
                     return;
                 }
 
-                let mapped_range = super::Context::buffer_get_mapped_range(
+                let mapped_range = super::DynContext::buffer_get_mapped_range(
                     &*download.context,
                     &download.id,
                     0..size,
