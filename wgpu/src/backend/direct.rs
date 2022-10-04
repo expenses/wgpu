@@ -716,8 +716,6 @@ fn map_buffer_copy_view(view: crate::ImageCopyBuffer) -> wgc::command::ImageCopy
 }
 
 fn map_texture_copy_view(view: crate::ImageCopyTexture) -> wgc::command::ImageCopyTexture {
-    dbg!(std::any::TypeId::of::<wgc::id::TextureId>());
-    dbg!(view.texture.id.type_id());
     wgc::command::ImageCopyTexture {
         texture: view
             .texture
@@ -864,9 +862,12 @@ impl crate::Context for Context {
             &wgc::instance::RequestAdapterOptions {
                 power_preference: options.power_preference,
                 force_fallback_adapter: options.force_fallback_adapter,
-                compatible_surface: options
-                    .compatible_surface
-                    .map(|surface| *surface.id.downcast_id()),
+                compatible_surface: options.compatible_surface.map(|surface| {
+                    surface
+                        .id
+                        .downcast_id::<<Context as crate::Context>::SurfaceId>()
+                        .id
+                }),
             },
             wgc::instance::AdapterInputs::Mask(wgt::Backends::all(), |_| ()),
         );

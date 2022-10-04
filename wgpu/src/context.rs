@@ -761,7 +761,8 @@ where
     ) {
         let surface = surface.downcast_id::<T::SurfaceId>();
         let (texture, status, detail) = Context::surface_get_current_texture(self, surface);
-        (texture.map(IdSendSync::upcast), status, Box::new(detail))
+        let detail = Box::new(detail) as Box<dyn Any + Send + Sync>;
+        (texture.map(IdSendSync::upcast), status, detail)
     }
 
     fn surface_present(&self, texture: &IdSendSync, detail: &(dyn Any + Send + Sync)) {
