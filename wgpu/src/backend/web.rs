@@ -144,11 +144,15 @@ impl crate::ComputePassInner<Context> for ComputePass {
             .dispatch_workgroups_indirect_with_f64(&indirect_buffer.0, indirect_offset as f64);
     }
 
-    fn write_timestamp(&mut self, _query_set: &(), _query_index: u32) {
+    fn write_timestamp(&mut self, _query_set: &Sendable<web_sys::GpuQuerySet>, _query_index: u32) {
         panic!("WRITE_TIMESTAMP_INSIDE_PASSES feature must be enabled to call write_timestamp in a compute pass")
     }
 
-    fn begin_pipeline_statistics_query(&mut self, _query_set: &(), _query_index: u32) {
+    fn begin_pipeline_statistics_query(
+        &mut self,
+        _query_set: &Sendable<web_sys::GpuQuerySet>,
+        _query_index: u32,
+    ) {
         // Not available in gecko yet
     }
 
@@ -494,11 +498,15 @@ impl crate::RenderPassInner<Context> for RenderPass {
         self.0.execute_bundles(&mapped);
     }
 
-    fn write_timestamp(&mut self, _query_set: &(), _query_index: u32) {
+    fn write_timestamp(&mut self, _query_set: &Sendable<web_sys::GpuQuerySet>, _query_index: u32) {
         panic!("WRITE_TIMESTAMP_INSIDE_PASSES feature must be enabled to call write_timestamp in a compute pass")
     }
 
-    fn begin_pipeline_statistics_query(&mut self, _query_set: &(), _query_index: u32) {
+    fn begin_pipeline_statistics_query(
+        &mut self,
+        _query_set: &Sendable<web_sys::GpuQuerySet>,
+        _query_index: u32,
+    ) {
         // Not available in gecko yet
     }
 
@@ -834,6 +842,15 @@ fn map_texture_copy_view(view: crate::ImageCopyTexture) -> web_sys::GpuImageCopy
     mapped
 }
 
+fn map_tagged_texture_copy_view(
+    view: crate::ImageCopyTexture,
+) -> web_sys::GpuImageCopyTextureTagged {
+    let mut mapped = web_sys::GpuImageCopyTextureTagged::new(&view.texture.id.0);
+    mapped.mip_level(view.mip_level);
+    mapped.origin(&map_origin_3d(view.origin));
+    mapped
+}
+
 fn map_texture_aspect(aspect: wgt::TextureAspect) -> web_sys::GpuTextureAspect {
     match aspect {
         wgt::TextureAspect::All => web_sys::GpuTextureAspect::All,
@@ -980,6 +997,37 @@ impl Context {
         };
         Sendable(context.into())
     }
+
+    pub fn queue_copy_external_image_to_texture(
+        &self,
+        queue: &Sendable<web_sys::GpuQueue>,
+        image: &web_sys::ImageBitmap,
+        texture: crate::ImageCopyTexture,
+        size: wgt::Extent3d,
+    ) {
+        queue
+            .0
+            .copy_external_image_to_texture_with_gpu_extent_3d_dict(
+                &web_sys::GpuImageCopyExternalImage::new(image),
+                &map_tagged_texture_copy_view(texture),
+                &map_extent_3d(size),
+            );
+    }
+}
+
+// Represents the global object in the JavaScript context.
+// It can be cast to from `web_sys::global` and exposes two getters `window` and `worker` of which only one is defined depending on the caller's context.
+// When called from the UI thread only `window` is defined whereas `worker` is only defined within a web worker context.
+// See: https://github.com/rustwasm/gloo/blob/2c9e776701ecb90c53e62dec1abd19c2b70e47c7/crates/timers/src/callback.rs#L8-L40
+#[wasm_bindgen]
+extern "C" {
+    type Global;
+
+    #[wasm_bindgen(method, getter, js_name = Window)]
+    fn window(this: &Global) -> JsValue;
+
+    #[wasm_bindgen(method, getter, js_name = WorkerGlobalScope)]
+    fn worker(this: &Global) -> JsValue;
 }
 
 // The web doesn't provide any way to identify specific queue
@@ -999,7 +1047,7 @@ impl crate::Context for Context {
     type SamplerId = Sendable<web_sys::GpuSampler>;
     type BufferId = Sendable<web_sys::GpuBuffer>;
     type TextureId = Sendable<web_sys::GpuTexture>;
-    type QuerySetId = (); //TODO!
+    type QuerySetId = Sendable<web_sys::GpuQuerySet>;
     type PipelineLayoutId = Sendable<web_sys::GpuPipelineLayout>;
     type RenderPipelineId = Sendable<web_sys::GpuRenderPipeline>;
     type ComputePipelineId = Sendable<web_sys::GpuComputePipeline>;
@@ -1026,7 +1074,20 @@ impl crate::Context for Context {
         MakeSendFuture<wasm_bindgen_futures::JsFuture, fn(JsFutureResult) -> Option<crate::Error>>;
 
     fn init(_backends: wgt::Backends) -> Self {
-        Context(web_sys::window().unwrap().navigator().gpu())
+        let global: Global = js_sys::global().unchecked_into();
+        let gpu = if !global.window().is_undefined() {
+            global.unchecked_into::<web_sys::Window>().navigator().gpu()
+        } else if !global.worker().is_undefined() {
+            global
+                .unchecked_into::<web_sys::WorkerGlobalScope>()
+                .navigator()
+                .gpu()
+        } else {
+            panic!(
+                "Accessing the GPU is only supported on the main thread or from a dedicated worker"
+            );
+        };
+        Context(gpu)
     }
 
     fn instance_create_surface(
@@ -1166,6 +1227,7 @@ impl crate::Context for Context {
             max_texture_dimension_3d: limits.max_texture_dimension_3d(),
             max_texture_array_layers: limits.max_texture_array_layers(),
             max_bind_groups: limits.max_bind_groups(),
+            max_bindings_per_bind_group: limits.max_bindings_per_bind_group(),
             max_dynamic_uniform_buffers_per_pipeline_layout: limits
                 .max_dynamic_uniform_buffers_per_pipeline_layout(),
             max_dynamic_storage_buffers_per_pipeline_layout: limits
@@ -1309,13 +1371,22 @@ impl crate::Context for Context {
         wgt::DownlevelCapabilities::default()
     }
 
+    #[cfg_attr(
+        not(any(
+            feature = "spirv",
+            feature = "glsl",
+            feature = "wgsl",
+            feature = "naga"
+        )),
+        allow(unreachable_code, unused_variables)
+    )]
     fn device_create_shader_module(
         &self,
         device: &Self::DeviceId,
         desc: crate::ShaderModuleDescriptor,
         _shader_bound_checks: wgt::ShaderBoundChecks,
     ) -> Self::ShaderModuleId {
-        let mut descriptor = match desc.source {
+        let mut descriptor: web_sys::GpuShaderModuleDescriptor = match desc.source {
             #[cfg(feature = "spirv")]
             crate::ShaderSource::SpirV(ref spv) => {
                 use naga::{back, front, valid};
@@ -1367,6 +1438,7 @@ impl crate::Context for Context {
                         .unwrap();
                 web_sys::GpuShaderModuleDescriptor::new(wgsl_text.as_str())
             }
+            #[cfg(feature = "wgsl")]
             crate::ShaderSource::Wgsl(ref code) => web_sys::GpuShaderModuleDescriptor::new(code),
             #[cfg(feature = "naga")]
             crate::ShaderSource::Naga(module) => {
@@ -1382,6 +1454,9 @@ impl crate::Context for Context {
                 let wgsl_text =
                     back::wgsl::write_string(&module, &module_info, writer_flags).unwrap();
                 web_sys::GpuShaderModuleDescriptor::new(wgsl_text.as_str())
+            }
+            crate::ShaderSource::Dummy(_) => {
+                panic!("found `ShaderSource::Dummy`")
             }
         };
         if let Some(label) = desc.label {
@@ -1735,9 +1810,19 @@ impl crate::Context for Context {
 
     fn device_create_query_set(
         &self,
-        _device: &Self::DeviceId,
-        _desc: &wgt::QuerySetDescriptor<crate::Label>,
+        device: &Self::DeviceId,
+        desc: &wgt::QuerySetDescriptor<crate::Label>,
     ) -> Self::QuerySetId {
+        let ty = match desc.ty {
+            wgt::QueryType::Occlusion => web_sys::GpuQueryType::Occlusion,
+            wgt::QueryType::Timestamp => web_sys::GpuQueryType::Timestamp,
+            wgt::QueryType::PipelineStatistics(_) => unreachable!(),
+        };
+        let mut mapped_desc = web_sys::GpuQuerySetDescriptor::new(desc.count, ty);
+        if let Some(label) = desc.label {
+            mapped_desc.label(label);
+        }
+        Sendable(device.0.create_query_set(&mapped_desc))
     }
 
     fn device_create_command_encoder(
@@ -2196,11 +2281,11 @@ impl crate::Context for Context {
 
     fn command_encoder_write_timestamp(
         &self,
-        _encoder: &Self::CommandEncoderId,
-        _query_set: &Self::QuerySetId,
-        _query_index: u32,
+        encoder: &Self::CommandEncoderId,
+        query_set: &Self::QuerySetId,
+        query_index: u32,
     ) {
-        unimplemented!();
+        encoder.0.write_timestamp(&query_set.0, query_index);
     }
 
     fn command_encoder_resolve_query_set(
@@ -2260,11 +2345,30 @@ impl crate::Context for Context {
     fn queue_validate_write_buffer(
         &self,
         _queue: &Self::QueueId,
-        _buffer: &Self::BufferId,
-        _offset: wgt::BufferAddress,
-        _size: wgt::BufferSize,
+        buffer: &Self::BufferId,
+        offset: wgt::BufferAddress,
+        size: wgt::BufferSize,
     ) {
-        // TODO
+        let usage = wgt::BufferUsages::from_bits_truncate(buffer.0.usage());
+        if !usage.contains(wgt::BufferUsages::COPY_DST) {
+            panic!("Destination buffer is missing the `COPY_DST` usage flag");
+        }
+        let write_size = u64::from(size);
+        if write_size % wgt::COPY_BUFFER_ALIGNMENT != 0 {
+            panic!(
+                "Copy size {} does not respect `COPY_BUFFER_ALIGNMENT`",
+                size
+            );
+        }
+        if offset % wgt::COPY_BUFFER_ALIGNMENT != 0 {
+            panic!(
+                "Buffer offset {} is not aligned to block size or `COPY_BUFFER_ALIGNMENT`",
+                offset
+            );
+        }
+        if write_size + offset > buffer.0.size() as u64 {
+            panic!("copy of {}..{} would end up overrunning the bounds of the destination buffer of size {}", offset, offset + write_size, buffer.0.size());
+        }
     }
 
     fn queue_create_staging_buffer(

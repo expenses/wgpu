@@ -183,14 +183,14 @@ impl Surface {
         &self,
         adapter: &Adapter<A>,
     ) -> Result<SurfaceCapabilities, GetSurfaceSupportError> {
-        let suf = A::get_surface(self);
+        let suf = A::get_surface(self).ok_or(GetSurfaceSupportError::Unsupported)?;
         profiling::scope!("surface_capabilities");
         let caps = unsafe {
             adapter
                 .raw
                 .adapter
                 .surface_capabilities(&suf.raw)
-                .ok_or(GetSurfaceSupportError::UnsupportedQueueFamily)?
+                .ok_or(GetSurfaceSupportError::Unsupported)?
         };
 
         Ok(caps)
@@ -212,7 +212,15 @@ impl<A: HalApi> Adapter<A> {
 
     pub fn is_surface_supported(&self, surface: &Surface) -> bool {
         let suf = A::get_surface(surface);
-        unsafe { self.raw.adapter.surface_capabilities(&suf.raw) }.is_some()
+
+        // If get_surface returns None, then the API does not advertise support for the surface.
+        //
+        // This could occur if the user is running their app on Wayland but Vulkan does not support
+        // VK_KHR_wayland_surface.
+        match suf {
+            Some(suf) => unsafe { self.raw.adapter.surface_capabilities(&suf.raw) }.is_some(),
+            None => false,
+        }
     }
 
     pub(crate) fn get_texture_format_features(
@@ -328,7 +336,10 @@ impl<A: HalApi> Adapter<A> {
             .contains(wgt::Features::MAPPABLE_PRIMARY_BUFFERS)
             && self.raw.info.device_type == wgt::DeviceType::DiscreteGpu
         {
-            log::warn!("Feature MAPPABLE_PRIMARY_BUFFERS enabled on a discrete gpu. This is a massive performance footgun and likely not what you wanted");
+            log::warn!(
+                "Feature MAPPABLE_PRIMARY_BUFFERS enabled on a discrete gpu. \
+                        This is a massive performance footgun and likely not what you wanted"
+            );
         }
 
         if let Some(_) = desc.label {
@@ -372,8 +383,8 @@ pub enum GetSurfaceSupportError {
     InvalidAdapter,
     #[error("invalid surface")]
     InvalidSurface,
-    #[error("surface does not support the adapter's queue family")]
-    UnsupportedQueueFamily,
+    #[error("surface is not supported by the adapter")]
+    Unsupported,
 }
 
 #[derive(Clone, Debug, Error)]
@@ -437,10 +448,7 @@ impl<G: GlobalIdentityHandlerFactory> Global<G> {
     ) -> SurfaceId {
         profiling::scope!("Instance::create_surface");
 
-        //Note: using a dummy argument to work around the following error:
-        //> cannot provide explicit generic arguments when `impl Trait` is used in argument position
         fn init<A: hal::Api>(
-            _: A,
             inst: &Option<A::Instance>,
             display_handle: raw_window_handle::RawDisplayHandle,
             window_handle: raw_window_handle::RawWindowHandle,
@@ -462,40 +470,15 @@ impl<G: GlobalIdentityHandlerFactory> Global<G> {
         let surface = Surface {
             presentation: None,
             #[cfg(vulkan)]
-            vulkan: init(
-                hal::api::Vulkan,
-                &self.instance.vulkan,
-                display_handle,
-                window_handle,
-            ),
+            vulkan: init::<hal::api::Vulkan>(&self.instance.vulkan, display_handle, window_handle),
             #[cfg(metal)]
-            metal: init(
-                hal::api::Metal,
-                &self.instance.metal,
-                display_handle,
-                window_handle,
-            ),
+            metal: init::<hal::api::Metal>(&self.instance.metal, display_handle, window_handle),
             #[cfg(dx12)]
-            dx12: init(
-                hal::api::Dx12,
-                &self.instance.dx12,
-                display_handle,
-                window_handle,
-            ),
+            dx12: init::<hal::api::Dx12>(&self.instance.dx12, display_handle, window_handle),
             #[cfg(dx11)]
-            dx11: init(
-                hal::api::Dx11,
-                &self.instance.dx11,
-                display_handle,
-                window_handle,
-            ),
+            dx11: init::<hal::api::Dx11>(&self.instance.dx11, display_handle, window_handle),
             #[cfg(gl)]
-            gl: init(
-                hal::api::Gles,
-                &self.instance.gl,
-                display_handle,
-                window_handle,
-            ),
+            gl: init::<hal::api::Gles>(&self.instance.gl, display_handle, window_handle),
         };
 
         let mut token = Token::root();
@@ -721,9 +704,15 @@ impl<G: GlobalIdentityHandlerFactory> Global<G> {
                         adapters.retain(|exposed| exposed.info.device_type == wgt::DeviceType::Cpu);
                     }
                     if let Some(surface) = compatible_surface {
-                        let suf_raw = &A::get_surface(surface).raw;
+                        let surface = &A::get_surface(surface);
                         adapters.retain(|exposed| unsafe {
-                            exposed.adapter.surface_capabilities(suf_raw).is_some()
+                            // If the surface does not exist for this backend,
+                            // then the surface is not supported.
+                            surface.is_some()
+                                && exposed
+                                    .adapter
+                                    .surface_capabilities(&surface.unwrap().raw)
+                                    .is_some()
                         });
                     }
                     device_types.extend(adapters.iter().map(|ad| ad.info.device_type));
@@ -822,10 +811,13 @@ impl<G: GlobalIdentityHandlerFactory> Global<G> {
         }
 
         let preferred_gpu = match desc.power_preference {
-            // Since devices of type "Other" might really be "Unknown" and come from APIs like OpenGL that don't specify device type,
-            // Prefer more Specific types over Other.
-            // This means that backends which do provide accurate device types will be preferred
-            // if their device type indicates an actual hardware GPU (integrated or discrete).
+            // Since devices of type "Other" might really be "Unknown" and come
+            // from APIs like OpenGL that don't specify device type, Prefer more
+            // Specific types over Other.
+            //
+            // This means that backends which do provide accurate device types
+            // will be preferred if their device type indicates an actual
+            // hardware GPU (integrated or discrete).
             PowerPreference::LowPower => integrated.or(discrete).or(other).or(virt).or(cpu),
             PowerPreference::HighPerformance => discrete.or(integrated).or(other).or(virt).or(cpu),
         };

@@ -15,7 +15,7 @@ use std::{borrow::Borrow, num::NonZeroU8, ops::Range, ptr::NonNull};
 
 /// The status code provided to the buffer mapping callback.
 ///
-/// This is very similar to `Result<(), BufferAccessError>`, except that this is FFI-friendly.
+/// This is very similar to `BufferAccessResult`, except that this is FFI-friendly.
 #[repr(C)]
 #[derive(Debug)]
 pub enum BufferMapAsyncStatus {
@@ -84,7 +84,7 @@ pub struct BufferMapCallback {
 
 enum BufferMapCallbackInner {
     Rust {
-        callback: Box<dyn FnOnce(BufferMapAsyncStatus) + Send + 'static>,
+        callback: Box<dyn FnOnce(BufferAccessResult) + Send + 'static>,
     },
     C {
         inner: BufferMapCallbackC,
@@ -92,7 +92,7 @@ enum BufferMapCallbackInner {
 }
 
 impl BufferMapCallback {
-    pub fn from_rust(callback: Box<dyn FnOnce(BufferMapAsyncStatus) + Send + 'static>) -> Self {
+    pub fn from_rust(callback: Box<dyn FnOnce(BufferAccessResult) + Send + 'static>) -> Self {
         Self {
             inner: Some(BufferMapCallbackInner::Rust { callback }),
         }
@@ -100,21 +100,50 @@ impl BufferMapCallback {
 
     /// # Safety
     ///
-    /// - The callback pointer must be valid to call with the provided user_data pointer.
-    /// - Both pointers must point to valid memory until the callback is invoked, which may happen at an unspecified time.
+    /// - The callback pointer must be valid to call with the provided user_data
+    ///   pointer.
+    ///
+    /// - Both pointers must point to valid memory until the callback is
+    ///   invoked, which may happen at an unspecified time.
     pub unsafe fn from_c(inner: BufferMapCallbackC) -> Self {
         Self {
             inner: Some(BufferMapCallbackInner::C { inner }),
         }
     }
 
-    pub(crate) fn call(mut self, status: BufferMapAsyncStatus) {
+    pub(crate) fn call(mut self, result: BufferAccessResult) {
         match self.inner.take() {
             Some(BufferMapCallbackInner::Rust { callback }) => {
-                callback(status);
+                callback(result);
             }
             // SAFETY: the contract of the call to from_c says that this unsafe is sound.
             Some(BufferMapCallbackInner::C { inner }) => unsafe {
+                let status = match result {
+                    Ok(()) => BufferMapAsyncStatus::Success,
+                    Err(BufferAccessError::Device(_)) => BufferMapAsyncStatus::ContextLost,
+                    Err(BufferAccessError::Invalid) | Err(BufferAccessError::Destroyed) => {
+                        BufferMapAsyncStatus::Invalid
+                    }
+                    Err(BufferAccessError::AlreadyMapped) => BufferMapAsyncStatus::AlreadyMapped,
+                    Err(BufferAccessError::MapAlreadyPending) => {
+                        BufferMapAsyncStatus::MapAlreadyPending
+                    }
+                    Err(BufferAccessError::MissingBufferUsage(_)) => {
+                        BufferMapAsyncStatus::InvalidUsageFlags
+                    }
+                    Err(BufferAccessError::UnalignedRange)
+                    | Err(BufferAccessError::UnalignedRangeSize { .. })
+                    | Err(BufferAccessError::UnalignedOffset { .. }) => {
+                        BufferMapAsyncStatus::InvalidAlignment
+                    }
+                    Err(BufferAccessError::OutOfBoundsUnderrun { .. })
+                    | Err(BufferAccessError::OutOfBoundsOverrun { .. })
+                    | Err(BufferAccessError::NegativeRange { .. }) => {
+                        BufferMapAsyncStatus::InvalidRange
+                    }
+                    Err(_) => BufferMapAsyncStatus::Error,
+                };
+
                 (inner.callback)(status, inner.user_data);
             },
             None => {
@@ -141,6 +170,8 @@ pub struct BufferMapOperation {
 pub enum BufferAccessError {
     #[error(transparent)]
     Device(#[from] DeviceError),
+    #[error("buffer map failed")]
+    Failed,
     #[error("buffer is invalid")]
     Invalid,
     #[error("buffer is destroyed")]
@@ -178,8 +209,11 @@ pub enum BufferAccessError {
         start: wgt::BufferAddress,
         end: wgt::BufferAddress,
     },
+    #[error("buffer map aborted")]
+    MapAborted,
 }
 
+pub type BufferAccessResult = Result<(), BufferAccessError>;
 pub(crate) struct BufferPendingMapping {
     pub range: Range<wgt::BufferAddress>,
     pub op: BufferMapOperation,
@@ -483,13 +517,20 @@ impl<A: hal::Api> Borrow<TextureSelector> for Texture<A> {
 #[cfg_attr(feature = "trace", derive(serde::Serialize))]
 #[cfg_attr(feature = "replay", derive(serde::Deserialize), serde(default))]
 pub struct TextureViewDescriptor<'a> {
-    /// Debug label of the texture view. This will show up in graphics debuggers for easy identification.
+    /// Debug label of the texture view.
+    ///
+    /// This will show up in graphics debuggers for easy identification.
     pub label: Label<'a>,
-    /// Format of the texture view, or `None` for the same format as the texture itself.
+    /// Format of the texture view, or `None` for the same format as the texture
+    /// itself.
+    ///
     /// At this time, it must be the same the underlying format of the texture.
     pub format: Option<wgt::TextureFormat>,
-    /// The dimension of the texture view. For 1D textures, this must be `1D`. For 2D textures it must be one of
-    /// `D2`, `D2Array`, `Cube`, and `CubeArray`. For 3D textures it must be `3D`
+    /// The dimension of the texture view.
+    ///
+    /// - For 1D textures, this must be `1D`.
+    /// - For 2D textures it must be one of `D2`, `D2Array`, `Cube`, or `CubeArray`.
+    /// - For 3D textures it must be `3D`.
     pub dimension: Option<wgt::TextureViewDimension>,
     /// Range within the texture that is accessible via this view.
     pub range: wgt::ImageSubresourceRange,
@@ -580,7 +621,9 @@ impl<A: hal::Api> Resource for TextureView<A> {
 #[cfg_attr(feature = "trace", derive(serde::Serialize))]
 #[cfg_attr(feature = "replay", derive(serde::Deserialize))]
 pub struct SamplerDescriptor<'a> {
-    /// Debug label of the sampler. This will show up in graphics debuggers for easy identification.
+    /// Debug label of the sampler.
+    ///
+    /// This will show up in graphics debuggers for easy identification.
     pub label: Label<'a>,
     /// How to deal with out of bounds accesses in the u (i.e. x) direction
     pub address_modes: [wgt::AddressMode; 3],
@@ -598,7 +641,8 @@ pub struct SamplerDescriptor<'a> {
     pub compare: Option<wgt::CompareFunction>,
     /// Valid values: 1, 2, 4, 8, and 16.
     pub anisotropy_clamp: Option<NonZeroU8>,
-    /// Border color to use when address_mode is [`AddressMode::ClampToBorder`](wgt::AddressMode::ClampToBorder)
+    /// Border color to use when address_mode is
+    /// [`AddressMode::ClampToBorder`](wgt::AddressMode::ClampToBorder)
     pub border_color: Option<wgt::SamplerBorderColor>,
 }
 

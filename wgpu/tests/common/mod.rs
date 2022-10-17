@@ -278,7 +278,13 @@ pub fn initialize_test(parameters: TestParameters, test_function: impl FnOnce(Te
     }
 
     let panicked = catch_unwind(AssertUnwindSafe(|| test_function(context))).is_err();
-    let canary_set = hal::VALIDATION_CANARY.get_and_reset();
+    cfg_if::cfg_if!(
+        if #[cfg(any(not(target_arch = "wasm32"), target_os = "emscripten"))] {
+            let canary_set = hal::VALIDATION_CANARY.get_and_reset();
+        } else {
+            let canary_set = false;
+        }
+    );
 
     let failed = panicked || canary_set;
 
@@ -306,4 +312,22 @@ pub fn initialize_test(parameters: TestParameters, test_function: impl FnOnce(Te
     } else {
         panic!("UNEXPECTED TEST FAILURE DUE TO {}", failure_cause)
     }
+}
+
+// Run some code in an error scope and assert that validation fails.
+pub fn fail<T>(device: &wgpu::Device, callback: impl FnOnce() -> T) -> T {
+    device.push_error_scope(wgpu::ErrorFilter::Validation);
+    let result = callback();
+    assert!(pollster::block_on(device.pop_error_scope()).is_some());
+
+    result
+}
+
+// Run some code in an error scope and assert that validation succeeds.
+pub fn valid<T>(device: &wgpu::Device, callback: impl FnOnce() -> T) -> T {
+    device.push_error_scope(wgpu::ErrorFilter::Validation);
+    let result = callback();
+    assert!(pollster::block_on(device.pop_error_scope()).is_none());
+
+    result
 }
