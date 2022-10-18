@@ -737,6 +737,8 @@ impl crate::Device<super::Api> for super::Device {
                 super::TextureInner::Texture { raw, .. } => {
                     gl.delete_texture(raw);
                 }
+                #[cfg(all(target_arch = "wasm32", not(target_os = "emscripten")))]
+                super::TextureInner::ExternalFramebuffer { .. } => {}
             }
         }
 

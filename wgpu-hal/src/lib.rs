@@ -58,7 +58,7 @@ mod dx11;
 mod dx12;
 mod empty;
 #[cfg(all(feature = "gles"))]
-mod gles;
+pub mod gles;
 #[cfg(all(feature = "metal"))]
 mod metal;
 #[cfg(feature = "vulkan")]
