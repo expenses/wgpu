@@ -34,7 +34,7 @@ Bottom level categories:
 - DX11
 - GLES
 - WebGPU
-- Enscripten
+- Emscripten
 - Hal
 -->
 
@@ -46,6 +46,7 @@ Bottom level categories:
 
 - Convert all `Default` Implementations on Enums to `derive(Default)`
 - Implement `Default` for `CompositeAlphaMode`
+- Improve compute shader validation error message. By @haraldreingruber in [#3139](https://github.com/gfx-rs/wgpu/pull/3139)
 
 #### WebGPU
 - Implement `queue_validate_write_buffer` by @jinleili in [#3098](https://github.com/gfx-rs/wgpu/pull/3098)
@@ -88,6 +89,7 @@ Bottom level categories:
 ### Testing/Internal
 
 - Update the `minimum supported rust version` to 1.62
+- Use cargo 1.64 workspace inheritance feature. By @jinleili in [#3107](https://github.com/gfx-rs/wgpu/pull/3107)
 
 #### Vulkan
 

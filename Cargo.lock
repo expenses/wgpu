@@ -667,7 +667,7 @@ checksum = "9ea835d29036a4087793836fa931b08837ad5e957da9e23886b29586fb9b6650"
 
 [[package]]
 name = "dummy"
-version = "0.1.0"
+version = "0.14.0"
 dependencies = [
  "wgpu-core",
 ]
@@ -1377,7 +1377,7 @@ dependencies = [
 [[package]]
 name = "naga"
 version = "0.10.0"
-source = "git+https://github.com/gfx-rs/naga?rev=c52d9102#c52d91023d43092323615fcc746162e478033f26"
+source = "git+https://github.com/gfx-rs/naga?rev=e7fc8e6#e7fc8e64f2f23397b149217ecce6e123c5aa5092"
 dependencies = [
  "bit-set",
  "bitflags",
@@ -1697,7 +1697,7 @@ checksum = "1df8c4ec4b0627e53bdf214615ad287367e482558cf84b109250b37464dc03ae"
 
 [[package]]
 name = "player"
-version = "0.1.0"
+version = "0.14.0"
 dependencies = [
  "env_logger",
  "log",
@@ -1905,7 +1905,7 @@ dependencies = [
 
 [[package]]
 name = "run-wasm"
-version = "0.1.0"
+version = "0.14.0"
 dependencies = [
  "cargo-run-wasm",
 ]

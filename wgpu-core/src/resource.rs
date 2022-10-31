@@ -385,7 +385,7 @@ impl<G: GlobalIdentityHandlerFactory> Global<G> {
         let mut token = Token::root();
         let (guard, _) = hub.textures.read(&mut token);
         let texture = guard.try_get(id).ok().flatten();
-        let hal_texture = texture.map(|tex| tex.inner.as_raw().unwrap());
+        let hal_texture = texture.and_then(|tex| tex.inner.as_raw());
 
         hal_texture_callback(hal_texture);
     }
@@ -427,6 +427,25 @@ impl<G: GlobalIdentityHandlerFactory> Global<G> {
         let hal_device = device.map(|device| &device.raw);
 
         hal_device_callback(hal_device)
+    }
+
+    /// # Safety
+    /// - The raw surface handle must not be manually destroyed
+    pub unsafe fn surface_as_hal_mut<A: HalApi, F: FnOnce(Option<&mut A::Surface>) -> R, R>(
+        &self,
+        id: SurfaceId,
+        hal_surface_callback: F,
+    ) -> R {
+        profiling::scope!("Surface::as_hal_mut");
+
+        let mut token = Token::root();
+        let (mut guard, _) = self.surfaces.write(&mut token);
+        let surface = guard.get_mut(id).ok();
+        let hal_surface = surface
+            .and_then(|surface| A::get_surface_mut(surface))
+            .map(|surface| &mut surface.raw);
+
+        hal_surface_callback(hal_surface)
     }
 }
 

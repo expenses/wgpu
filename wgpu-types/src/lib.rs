@@ -2,6 +2,7 @@
  *  This API is used for targeting both Web and Native.
  */
 
+#![cfg_attr(docsrs, feature(doc_cfg, doc_auto_cfg))]
 #![allow(
     // We don't use syntax sugar where it's not necessary.
     clippy::match_like_matches_macro,
@@ -3762,7 +3763,7 @@ pub enum PresentMode {
     Mailbox = 5,
 }
 
-/// Specifies how the alpha channel of the textures should be handled during (martin mouv i step)
+/// Specifies how the alpha channel of the textures should be handled during
 /// compositing.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
