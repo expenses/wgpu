@@ -654,17 +654,17 @@ impl crate::Instance<super::Api> for Instance {
             client_ext_str.split_whitespace().collect::<Vec<_>>()
         );
 
-        let wayland_library = if client_ext_str.contains(&"EGL_EXT_platform_wayland") {
+        let wayland_library = if client_ext_str.contains("EGL_EXT_platform_wayland") {
             test_wayland_display()
         } else {
             None
         };
-        let x11_display_library = if client_ext_str.contains(&"EGL_EXT_platform_x11") {
+        let x11_display_library = if client_ext_str.contains("EGL_EXT_platform_x11") {
             open_x_display()
         } else {
             None
         };
-        let angle_x11_display_library = if client_ext_str.contains(&"EGL_ANGLE_platform_angle") {
+        let angle_x11_display_library = if client_ext_str.contains("EGL_ANGLE_platform_angle") {
             open_x_display()
         } else {
             None
@@ -702,11 +702,7 @@ impl crate::Instance<super::Api> for Instance {
                 EGL_PLATFORM_ANGLE_NATIVE_PLATFORM_TYPE_ANGLE as egl::Attrib,
                 EGL_PLATFORM_X11_KHR as egl::Attrib,
                 EGL_PLATFORM_ANGLE_DEBUG_LAYERS_ENABLED as egl::Attrib,
-                if desc.flags.contains(crate::InstanceFlags::VALIDATION) {
-                    1
-                } else {
-                    0
-                },
+                usize::from(desc.flags.contains(crate::InstanceFlags::VALIDATION)),
                 egl::ATTRIB_NONE,
             ];
             let display = egl
@@ -735,7 +731,7 @@ impl crate::Instance<super::Api> for Instance {
         };
 
         if desc.flags.contains(crate::InstanceFlags::VALIDATION)
-            && client_ext_str.contains(&"EGL_KHR_debug")
+            && client_ext_str.contains("EGL_KHR_debug")
         {
             log::info!("Enabling EGL debug output");
             let function: EglDebugMessageControlFun =

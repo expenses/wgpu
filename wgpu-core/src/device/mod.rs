@@ -590,6 +590,17 @@ impl<A: HalApi> Device<A> {
             });
         }
 
+        if desc.usage.contains(wgt::BufferUsages::INDEX)
+            && desc.usage.contains(
+                wgt::BufferUsages::VERTEX
+                    | wgt::BufferUsages::UNIFORM
+                    | wgt::BufferUsages::INDIRECT
+                    | wgt::BufferUsages::STORAGE,
+            )
+        {
+            self.require_downlevel_flags(wgt::DownlevelFlags::UNRESTRICTED_INDEX_BUFFER)?;
+        }
+
         let mut usage = conv::map_buffer_usage(desc.usage);
 
         if desc.usage.is_empty() {
@@ -5147,7 +5158,7 @@ impl<G: GlobalIdentityHandlerFactory> Global<G> {
                 .composite_alpha_modes
                 .contains(&config.composite_alpha_mode)
             {
-                let new_alpha_mode = 'b: loop {
+                let new_alpha_mode = 'alpha: loop {
                     // Automatic alpha mode checks.
                     let fallbacks = match config.composite_alpha_mode {
                         wgt::CompositeAlphaMode::Auto => &[
@@ -5164,7 +5175,7 @@ impl<G: GlobalIdentityHandlerFactory> Global<G> {
 
                     for &fallback in fallbacks {
                         if caps.composite_alpha_modes.contains(&fallback) {
-                            break 'b fallback;
+                            break 'alpha fallback;
                         }
                     }
 

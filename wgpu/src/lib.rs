@@ -43,7 +43,7 @@ pub use wgt::{
     QUERY_RESOLVE_BUFFER_ALIGNMENT, QUERY_SET_MAX_QUERIES, QUERY_SIZE, VERTEX_STRIDE_ALIGNMENT,
 };
 
-use backend::{BufferMappedRange, Context as C, QueueWriteBuffer};
+use backend::{BufferMappedRange, Context as C, Id as BackendId, QueueWriteBuffer};
 
 /// Filter for error scopes.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd)]
@@ -164,28 +164,32 @@ trait RenderPassInner<Ctx: Context>: RenderInner<Ctx> {
     );
 }
 
+trait GlobalId {
+    fn global_id(&self) -> BackendId;
+}
+
 trait Context: Debug + Send + Sized + Sync {
-    type AdapterId: Debug + Send + Sync + 'static;
-    type DeviceId: Debug + Send + Sync + 'static;
-    type QueueId: Debug + Send + Sync + 'static;
-    type ShaderModuleId: Debug + Send + Sync + 'static;
-    type BindGroupLayoutId: Debug + Send + Sync + 'static;
-    type BindGroupId: Debug + Send + Sync + 'static;
-    type TextureViewId: Debug + Send + Sync + 'static;
-    type SamplerId: Debug + Send + Sync + 'static;
-    type BufferId: Debug + Send + Sync + 'static;
-    type TextureId: Debug + Send + Sync + 'static;
-    type QuerySetId: Debug + Send + Sync + 'static;
-    type PipelineLayoutId: Debug + Send + Sync + 'static;
-    type RenderPipelineId: Debug + Send + Sync + 'static;
-    type ComputePipelineId: Debug + Send + Sync + 'static;
+    type AdapterId: GlobalId + Debug + Send + Sync + 'static;
+    type DeviceId: GlobalId + Debug + Send + Sync + 'static;
+    type QueueId: GlobalId + Debug + Send + Sync + 'static;
+    type ShaderModuleId: GlobalId + Debug + Send + Sync + 'static;
+    type BindGroupLayoutId: GlobalId + Debug + Send + Sync + 'static;
+    type BindGroupId: GlobalId + Debug + Send + Sync + 'static;
+    type TextureViewId: GlobalId + Debug + Send + Sync + 'static;
+    type SamplerId: GlobalId + Debug + Send + Sync + 'static;
+    type BufferId: GlobalId + Debug + Send + Sync + 'static;
+    type TextureId: GlobalId + Debug + Send + Sync + 'static;
+    type QuerySetId: GlobalId + Debug + Send + Sync + 'static;
+    type PipelineLayoutId: GlobalId + Debug + Send + Sync + 'static;
+    type RenderPipelineId: GlobalId + Debug + Send + Sync + 'static;
+    type ComputePipelineId: GlobalId + Debug + Send + Sync + 'static;
     type CommandEncoderId: Debug;
     type ComputePassId: Debug + ComputePassInner<Self>;
     type RenderPassId: Debug + RenderPassInner<Self>;
     type CommandBufferId: Debug + Send + Sync;
     type RenderBundleEncoderId: Debug + RenderInner<Self>;
-    type RenderBundleId: Debug + Send + Sync + 'static;
-    type SurfaceId: Debug + Send + Sync + 'static;
+    type RenderBundleId: GlobalId + Debug + Send + Sync + 'static;
+    type SurfaceId: GlobalId + Debug + Send + Sync + 'static;
 
     type SurfaceOutputDetail: Send;
     type SubmissionIndex: Debug + Copy + Clone + Send + 'static;
@@ -3596,13 +3600,23 @@ impl Queue {
         }
     }
 
-    /// Schedule a data write into `texture`.
+    /// Schedule a write of some data into a texture.
+    ///
+    /// * `data` contains the texels to be written, which must be in
+    ///   [the same format as the texture](TextureFormat).
+    /// * `data_layout` describes the memory layout of `data`, which does not necessarily
+    ///   have to have tightly packed rows.
+    /// * `texture` specifies the texture to write into, and the location within the
+    ///   texture (coordinate offset, mip level) that will be overwritten.
+    /// * `size` is the size, in texels, of the region to be written.
     ///
     /// This method is intended to have low performance costs.
     /// As such, the write is not immediately submitted, and instead enqueued
     /// internally to happen at the start of the next `submit()` call.
+    /// However, `data` will be immediately copied into staging memory; so the caller may
+    /// discard it any time after this call completes.
     ///
-    /// This method fails if `data` overruns the size of fragment of `texture` specified with `size`.
+    /// This method fails if `size` overruns the size of `texture`, or if `data` is too short.
     pub fn write_texture(
         &self,
         texture: ImageCopyTexture,
@@ -3613,7 +3627,7 @@ impl Queue {
         Context::queue_write_texture(&*self.context, &self.id, texture, data, data_layout, size)
     }
 
-    /// Schedule a copy of data from `image` into `texture`
+    /// Schedule a copy of data from `image` into `texture`.
     #[cfg(all(target_arch = "wasm32", not(feature = "webgl")))]
     pub fn copy_external_image_to_texture(
         &self,
@@ -3783,6 +3797,205 @@ impl Surface {
     ) -> R {
         self.context
             .surface_as_hal_mut::<A, F, R>(&self.id, hal_surface_callback)
+    }
+}
+
+/// Opaque globally-unique identifier
+#[cfg(feature = "expose-ids")]
+#[cfg_attr(docsrs, doc(cfg(feature = "expose-ids")))]
+#[repr(transparent)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+pub struct Id(BackendId);
+
+#[cfg(feature = "expose-ids")]
+impl Adapter {
+    /// Returns a globally-unique identifier for this `Adapter`.
+    ///
+    /// Calling this method multiple times on the same object will always return the same value.
+    /// The returned value is guaranteed to be different for all resources created from the same `Instance`.
+    #[cfg_attr(docsrs, doc(cfg(feature = "expose-ids")))]
+    pub fn global_id(&self) -> Id {
+        Id(self.id.global_id())
+    }
+}
+
+#[cfg(feature = "expose-ids")]
+impl Device {
+    /// Returns a globally-unique identifier for this `Device`.
+    ///
+    /// Calling this method multiple times on the same object will always return the same value.
+    /// The returned value is guaranteed to be different for all resources created from the same `Instance`.
+    #[cfg_attr(docsrs, doc(cfg(feature = "expose-ids")))]
+    pub fn global_id(&self) -> Id {
+        Id(self.id.global_id())
+    }
+}
+
+#[cfg(feature = "expose-ids")]
+impl Queue {
+    /// Returns a globally-unique identifier for this `Queue`.
+    ///
+    /// Calling this method multiple times on the same object will always return the same value.
+    /// The returned value is guaranteed to be different for all resources created from the same `Instance`.
+    #[cfg_attr(docsrs, doc(cfg(feature = "expose-ids")))]
+    pub fn global_id(&self) -> Id {
+        Id(self.id.global_id())
+    }
+}
+
+#[cfg(feature = "expose-ids")]
+impl ShaderModule {
+    /// Returns a globally-unique identifier for this `ShaderModule`.
+    ///
+    /// Calling this method multiple times on the same object will always return the same value.
+    /// The returned value is guaranteed to be different for all resources created from the same `Instance`.
+    #[cfg_attr(docsrs, doc(cfg(feature = "expose-ids")))]
+    pub fn global_id(&self) -> Id {
+        Id(self.id.global_id())
+    }
+}
+
+#[cfg(feature = "expose-ids")]
+impl BindGroupLayout {
+    /// Returns a globally-unique identifier for this `BindGroupLayout`.
+    ///
+    /// Calling this method multiple times on the same object will always return the same value.
+    /// The returned value is guaranteed to be different for all resources created from the same `Instance`.
+    #[cfg_attr(docsrs, doc(cfg(feature = "expose-ids")))]
+    pub fn global_id(&self) -> Id {
+        Id(self.id.global_id())
+    }
+}
+
+#[cfg(feature = "expose-ids")]
+impl BindGroup {
+    /// Returns a globally-unique identifier for this `BindGroup`.
+    ///
+    /// Calling this method multiple times on the same object will always return the same value.
+    /// The returned value is guaranteed to be different for all resources created from the same `Instance`.
+    #[cfg_attr(docsrs, doc(cfg(feature = "expose-ids")))]
+    pub fn global_id(&self) -> Id {
+        Id(self.id.global_id())
+    }
+}
+
+#[cfg(feature = "expose-ids")]
+impl TextureView {
+    /// Returns a globally-unique identifier for this `TextureView`.
+    ///
+    /// Calling this method multiple times on the same object will always return the same value.
+    /// The returned value is guaranteed to be different for all resources created from the same `Instance`.
+    #[cfg_attr(docsrs, doc(cfg(feature = "expose-ids")))]
+    pub fn global_id(&self) -> Id {
+        Id(self.id.global_id())
+    }
+}
+
+#[cfg(feature = "expose-ids")]
+impl Sampler {
+    /// Returns a globally-unique identifier for this `Sampler`.
+    ///
+    /// Calling this method multiple times on the same object will always return the same value.
+    /// The returned value is guaranteed to be different for all resources created from the same `Instance`.
+    #[cfg_attr(docsrs, doc(cfg(feature = "expose-ids")))]
+    pub fn global_id(&self) -> Id {
+        Id(self.id.global_id())
+    }
+}
+
+#[cfg(feature = "expose-ids")]
+impl Buffer {
+    /// Returns a globally-unique identifier for this `Buffer`.
+    ///
+    /// Calling this method multiple times on the same object will always return the same value.
+    /// The returned value is guaranteed to be different for all resources created from the same `Instance`.
+    #[cfg_attr(docsrs, doc(cfg(feature = "expose-ids")))]
+    pub fn global_id(&self) -> Id {
+        Id(self.id.global_id())
+    }
+}
+
+#[cfg(feature = "expose-ids")]
+impl Texture {
+    /// Returns a globally-unique identifier for this `Texture`.
+    ///
+    /// Calling this method multiple times on the same object will always return the same value.
+    /// The returned value is guaranteed to be different for all resources created from the same `Instance`.
+    #[cfg_attr(docsrs, doc(cfg(feature = "expose-ids")))]
+    pub fn global_id(&self) -> Id {
+        Id(self.id.global_id())
+    }
+}
+
+#[cfg(feature = "expose-ids")]
+impl QuerySet {
+    /// Returns a globally-unique identifier for this `QuerySet`.
+    ///
+    /// Calling this method multiple times on the same object will always return the same value.
+    /// The returned value is guaranteed to be different for all resources created from the same `Instance`.
+    #[cfg_attr(docsrs, doc(cfg(feature = "expose-ids")))]
+    pub fn global_id(&self) -> Id {
+        Id(self.id.global_id())
+    }
+}
+
+#[cfg(feature = "expose-ids")]
+impl PipelineLayout {
+    /// Returns a globally-unique identifier for this `PipelineLayout`.
+    ///
+    /// Calling this method multiple times on the same object will always return the same value.
+    /// The returned value is guaranteed to be different for all resources created from the same `Instance`.
+    #[cfg_attr(docsrs, doc(cfg(feature = "expose-ids")))]
+    pub fn global_id(&self) -> Id {
+        Id(self.id.global_id())
+    }
+}
+
+#[cfg(feature = "expose-ids")]
+impl RenderPipeline {
+    /// Returns a globally-unique identifier for this `RenderPipeline`.
+    ///
+    /// Calling this method multiple times on the same object will always return the same value.
+    /// The returned value is guaranteed to be different for all resources created from the same `Instance`.
+    #[cfg_attr(docsrs, doc(cfg(feature = "expose-ids")))]
+    pub fn global_id(&self) -> Id {
+        Id(self.id.global_id())
+    }
+}
+
+#[cfg(feature = "expose-ids")]
+impl ComputePipeline {
+    /// Returns a globally-unique identifier for this `ComputePipeline`.
+    ///
+    /// Calling this method multiple times on the same object will always return the same value.
+    /// The returned value is guaranteed to be different for all resources created from the same `Instance`.
+    #[cfg_attr(docsrs, doc(cfg(feature = "expose-ids")))]
+    pub fn global_id(&self) -> Id {
+        Id(self.id.global_id())
+    }
+}
+
+#[cfg(feature = "expose-ids")]
+impl RenderBundle {
+    /// Returns a globally-unique identifier for this `RenderBundle`.
+    ///
+    /// Calling this method multiple times on the same object will always return the same value.
+    /// The returned value is guaranteed to be different for all resources created from the same `Instance`.
+    #[cfg_attr(docsrs, doc(cfg(feature = "expose-ids")))]
+    pub fn global_id(&self) -> Id {
+        Id(self.id.global_id())
+    }
+}
+
+#[cfg(feature = "expose-ids")]
+impl Surface {
+    /// Returns a globally-unique identifier for this `Surface`.
+    ///
+    /// Calling this method multiple times on the same object will always return the same value.
+    /// The returned value is guaranteed to be different for all resources created from the same `Instance`.
+    #[cfg_attr(docsrs, doc(cfg(feature = "expose-ids")))]
+    pub fn global_id(&self) -> Id {
+        Id(self.id.global_id())
     }
 }
 

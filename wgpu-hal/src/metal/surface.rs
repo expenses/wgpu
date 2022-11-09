@@ -98,7 +98,7 @@ impl super::Surface {
     }
 
     /// If not called on the main thread, this will panic.
-    pub unsafe fn get_metal_layer(
+    pub(crate) unsafe fn get_metal_layer(
         view: *mut Object,
         delegate: Option<&HalManagedMetalLayerDelegate>,
     ) -> *mut Object {
@@ -207,7 +207,7 @@ impl crate::Surface<super::Api> for super::Surface {
                 let () = msg_send![*render_layer, setFrame: bounds];
             }
         }
-        render_layer.set_device(&*device_raw);
+        render_layer.set_device(&device_raw);
         render_layer.set_pixel_format(self.raw_swapchain_format);
         render_layer.set_framebuffer_only(framebuffer_only);
         render_layer.set_presents_with_transaction(self.present_with_transaction);

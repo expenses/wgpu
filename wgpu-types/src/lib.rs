@@ -188,15 +188,6 @@ bitflags::bitflags! {
         ///
         /// This is a web and native feature.
         const DEPTH_CLIP_CONTROL = 1 << 0;
-        /// Allows for explicit creation of textures of format [`TextureFormat::Depth24PlusStencil8`]
-        ///
-        /// Supported platforms:
-        /// - Vulkan (some)
-        /// - DX12
-        /// - Metal (Macs with amd GPUs)
-        ///
-        /// This is a web and native feature.
-        const DEPTH24PLUS_STENCIL8 = 1 << 1;
         /// Allows for explicit creation of textures of format [`TextureFormat::Depth32FloatStencil8`]
         ///
         /// Supported platforms:
@@ -317,7 +308,9 @@ bitflags::bitflags! {
         /// the consequences.
         ///
         /// Supported platforms:
-        /// - All
+        /// - Vulkan
+        /// - DX12
+        /// - Metal
         ///
         /// This is a native only feature.
         const MAPPABLE_PRIMARY_BUFFERS = 1 << 16;
@@ -1063,7 +1056,7 @@ bitflags::bitflags! {
 
         /// Supports samplers with anisotropic filtering. Note this isn't actually required by
         /// WebGPU, the implementation is allowed to completely ignore aniso clamp. This flag is
-        /// here for native backends so they can comunicate to the user of aniso is enabled.
+        /// here for native backends so they can communicate to the user of aniso is enabled.
         ///
         /// All backends and all devices support anisotropic filtering.
         const ANISOTROPIC_FILTERING = 1 << 10;
@@ -1087,6 +1080,13 @@ bitflags::bitflags! {
         ///
         /// WebGL doesn't support this.
         const BUFFER_BINDINGS_NOT_16_BYTE_ALIGNED = 1 << 15;
+
+        /// Supports buffers to combine [`BufferUsages::INDEX`] with usages other than [`BufferUsages::COPY_DST`] and [`BufferUsages::COPY_SRC`].
+        /// Furthermore, in absence of this feature it is not allowed to copy index buffers from/to buffers with a set of usage flags containing
+         /// [`BufferUsages::VERTEX`]/[`BufferUsages::UNIFORM`]/[`BufferUsages::STORAGE`] or [`BufferUsages::INDIRECT`].
+        ///
+        /// WebGL doesn't support this.
+        const UNRESTRICTED_INDEX_BUFFER = 1 << 16;
     }
 }
 
@@ -2291,7 +2291,6 @@ impl TextureFormat {
         let astc_hdr = Features::TEXTURE_COMPRESSION_ASTC_HDR;
         let norm16bit = Features::TEXTURE_FORMAT_16BIT_NORM;
         let d32_s8 = Features::DEPTH32FLOAT_STENCIL8;
-        let d24_s8 = Features::DEPTH24PLUS_STENCIL8;
 
         // Sample Types
         let uint = TextureSampleType::Uint;
@@ -2376,7 +2375,7 @@ impl TextureFormat {
             // Depth-stencil textures
             Self::Depth16Unorm =>        (   native,   depth,    linear,         msaa, (1, 1),  2, attachment, 1),
             Self::Depth24Plus =>         (   native,   depth,    linear,         msaa, (1, 1),  4, attachment, 1),
-            Self::Depth24PlusStencil8 => (   d24_s8,   depth,    linear,         msaa, (1, 1),  4, attachment, 2),
+            Self::Depth24PlusStencil8 => (   native,   depth,    linear,         msaa, (1, 1),  4, attachment, 2),
             Self::Depth32Float =>        (   native,   depth,    linear,         msaa, (1, 1),  4, attachment, 1),
             Self::Depth32FloatStencil8 =>(   d32_s8,   depth,    linear,         msaa, (1, 1),  4, attachment, 2),
             // Packed uncompressed
