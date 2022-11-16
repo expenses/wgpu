@@ -740,7 +740,7 @@ impl crate::Adapter<super::Api> for super::Adapter {
             Tf::Rg8Sint => renderable,
             Tf::R32Uint => renderable | storage,
             Tf::R32Sint => renderable | storage,
-            Tf::R32Float => unfilterable | storage | float_renderable,
+            Tf::R32Float => filterable | storage | float_renderable,
             Tf::Rg16Uint => renderable,
             Tf::Rg16Sint => renderable,
             Tf::Rg16Unorm => empty,
