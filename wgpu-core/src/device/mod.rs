@@ -786,12 +786,12 @@ impl<A: HalApi> Device<A> {
             }
 
             // Compressed textures can only be 2D
-            if desc.format.is_compressed() {
+            /*if desc.format.is_compressed() {
                 return Err(CreateTextureError::InvalidCompressedDimension(
                     desc.dimension,
                     desc.format,
                 ));
-            }
+            }*/
         }
 
         if desc.format.is_compressed() {
