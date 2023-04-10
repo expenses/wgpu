@@ -397,10 +397,27 @@ impl super::Adapter {
         if extensions.contains("WEBGL_compressed_texture_astc")
             || extensions.contains("GL_OES_texture_compression_astc")
         {
-            if context.glow_context.compressed_texture_astc_get_ldr_profile_support().unwrap_or(false) {
-                features.insert(wgt::Features::TEXTURE_COMPRESSION_ASTC);
+            #[cfg(target_arch = "wasm32")]
+            {
+                if context
+                    .glow_context
+                    .compressed_texture_astc_get_ldr_profile_support()
+                    .unwrap_or(false)
+                {
+                    features.insert(wgt::Features::TEXTURE_COMPRESSION_ASTC);
+                }
+                if context
+                    .glow_context
+                    .compressed_texture_astc_get_hdr_profile_support()
+                    .unwrap_or(false)
+                {
+                    features.insert(wgt::Features::TEXTURE_COMPRESSION_ASTC_HDR);
+                }
             }
-            if context.glow_context.compressed_texture_astc_get_hdr_profile_support().unwrap_or(false) {
+
+            #[cfg(not(target_arch = "wasm32"))]
+            {
+                features.insert(wgt::Features::TEXTURE_COMPRESSION_ASTC);
                 features.insert(wgt::Features::TEXTURE_COMPRESSION_ASTC_HDR);
             }
         } else {
