@@ -567,7 +567,7 @@ impl ComputePipeline {
 pub struct CommandBuffer {
     context: Arc<C>,
     id: Option<ObjectId>,
-    data: Box<Data>,
+    data: Option<Box<Data>>,
 }
 static_assertions::assert_impl_all!(CommandBuffer: Send, Sync);
 
@@ -575,7 +575,7 @@ impl Drop for CommandBuffer {
     fn drop(&mut self) {
         if !thread::panicking() {
             if let Some(ref id) = self.id {
-                self.context.command_buffer_drop(id, self.data.as_ref());
+                self.context.command_buffer_drop(id, &self.data.take());
             }
         }
     }
@@ -1544,7 +1544,7 @@ impl Instance {
     /// # Safety
     ///
     /// - visual must be a valid IDCompositionVisual to create a surface upon.
-    #[cfg(all(feature = "dx12", windows))]
+    #[cfg(target_os = "windows")]
     pub unsafe fn create_surface_from_visual(&self, visual: *mut std::ffi::c_void) -> Surface {
         let surface = unsafe {
             self.context
@@ -1566,7 +1566,7 @@ impl Instance {
     /// # Safety
     ///
     /// - surface_handle must be a valid SurfaceHandle to create a surface upon.
-    #[cfg(all(feature = "dx12", windows))]
+    #[cfg(target_os = "windows")]
     pub unsafe fn create_surface_from_surface_handle(
         &self,
         surface_handle: *mut std::ffi::c_void,
@@ -2740,7 +2740,7 @@ impl CommandEncoder {
         CommandBuffer {
             context: Arc::clone(&self.context),
             id: Some(id),
-            data,
+            data: Some(data),
         }
     }
 
@@ -3224,7 +3224,11 @@ impl<'a> RenderPass<'a> {
             &*self.parent.context,
             &mut self.id,
             self.data.as_mut(),
-            Box::new(render_bundles.into_iter().map(|rb| &rb.id)),
+            Box::new(
+                render_bundles
+                    .into_iter()
+                    .map(|rb| (&rb.id, rb.data.as_ref())),
+            ),
         )
     }
 }
@@ -4034,7 +4038,7 @@ impl Queue {
             Box::new(
                 command_buffers
                     .into_iter()
-                    .map(|mut comb| comb.id.take().unwrap()),
+                    .map(|mut comb| (comb.id.take().unwrap(), comb.data.take().unwrap())),
             ),
         );
 
@@ -4243,8 +4247,41 @@ impl Surface {
 #[cfg(feature = "expose-ids")]
 #[cfg_attr(docsrs, doc(cfg(feature = "expose-ids")))]
 #[repr(transparent)]
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct Id<T>(core::num::NonZeroU64, std::marker::PhantomData<*mut T>);
+
+#[cfg(feature = "expose-ids")]
+impl<T> Clone for Id<T> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+#[cfg(feature = "expose-ids")]
+impl<T> Copy for Id<T> {}
+
+#[cfg(feature = "expose-ids")]
+impl<T> Debug for Id<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        f.debug_tuple("Id").field(&self.0).finish()
+    }
+}
+
+#[cfg(feature = "expose-ids")]
+impl<T> PartialEq for Id<T> {
+    fn eq(&self, other: &Id<T>) -> bool {
+        self.0 == other.0
+    }
+}
+
+#[cfg(feature = "expose-ids")]
+impl<T> Eq for Id<T> {}
+
+#[cfg(feature = "expose-ids")]
+impl<T> std::hash::Hash for Id<T> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.0.hash(state)
+    }
+}
 
 #[cfg(feature = "expose-ids")]
 impl Adapter {
