@@ -2925,14 +2925,14 @@ impl<A: HalApi> Device<A> {
         if let Some(ds) = depth_stencil_state {
             let error = loop {
                 let format_features = self.describe_format_features(adapter, ds.format)?;
-                if !format_features
+                /*if !format_features
                     .allowed_usages
                     .contains(wgt::TextureUsages::RENDER_ATTACHMENT)
                 {
                     break Some(pipeline::DepthStencilStateError::FormatNotRenderable(
                         ds.format,
                     ));
-                }
+                }*/
 
                 let aspect = hal::FormatAspects::from(ds.format);
                 if ds.is_depth_enabled() && !aspect.contains(hal::FormatAspects::DEPTH) {
