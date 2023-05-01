@@ -2888,12 +2888,12 @@ impl<A: HalApi> Device<A> {
                     }
 
                     let format_features = self.describe_format_features(adapter, cs.format)?;
-                    if !format_features
+                    /*if !format_features
                         .allowed_usages
                         .contains(wgt::TextureUsages::RENDER_ATTACHMENT)
                     {
                         break Some(pipeline::ColorStateError::FormatNotRenderable(cs.format));
-                    }
+                    }*/
                     let blendable = format_features.flags.contains(Tfff::BLENDABLE);
                     let filterable = format_features.flags.contains(Tfff::FILTERABLE);
                     let adapter_specific = self
