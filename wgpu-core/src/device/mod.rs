@@ -1189,11 +1189,11 @@ impl<A: HalApi> Device<A> {
                 break 'b Err(TextureViewNotRenderableReason::Usage(texture.desc.usage));
             }
 
-            if resolved_dimension != TextureViewDimension::D2 {
+            /*if resolved_dimension != TextureViewDimension::D2 {
                 break 'b Err(TextureViewNotRenderableReason::Dimension(
                     resolved_dimension,
                 ));
-            }
+            }*/
 
             if resolved_mip_level_count != 1 {
                 break 'b Err(TextureViewNotRenderableReason::MipLevelCount(
@@ -1201,11 +1201,11 @@ impl<A: HalApi> Device<A> {
                 ));
             }
 
-            if resolved_array_layer_count != 1 {
+            /*if resolved_array_layer_count != 1 {
                 break 'b Err(TextureViewNotRenderableReason::ArrayLayerCount(
                     resolved_array_layer_count,
                 ));
-            }
+            }*/
 
             if aspects != hal::FormatAspects::from(texture.desc.format) {
                 break 'b Err(TextureViewNotRenderableReason::Aspects(aspects));
