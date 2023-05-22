@@ -401,15 +401,13 @@ impl super::Adapter {
             {
                 if context
                     .glow_context
-                    .compressed_texture_astc_get_ldr_profile_support()
-                    .unwrap_or(false)
+                    .compressed_texture_astc_supports_ldr_profile()
                 {
                     features.insert(wgt::Features::TEXTURE_COMPRESSION_ASTC);
                 }
                 if context
                     .glow_context
-                    .compressed_texture_astc_get_hdr_profile_support()
-                    .unwrap_or(false)
+                    .compressed_texture_astc_supports_hdr_profile()
                 {
                     features.insert(wgt::Features::TEXTURE_COMPRESSION_ASTC_HDR);
                 }
