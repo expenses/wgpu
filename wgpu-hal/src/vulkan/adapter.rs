@@ -1084,6 +1084,11 @@ impl PhysicalDeviceProperties {
             extensions.push(ext::external_memory_dma_buf::NAME);
         }
 
+        // Optional `VK_EXT_image_drm_format_modifier`
+        if self.supports_extension(ext::image_drm_format_modifier::NAME) {
+            extensions.push(ext::image_drm_format_modifier::NAME);
+        }
+
         // Optional `VK_EXT_memory_budget`
         if self.supports_extension(ext::memory_budget::NAME) {
             extensions.push(ext::memory_budget::NAME);
