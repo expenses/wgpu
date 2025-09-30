@@ -644,6 +644,109 @@ impl super::Device {
         }
     }
 
+    pub unsafe fn texture_from_dma(
+        &self,
+        file_descriptor: i32,
+        modifier: u64,
+        stride: u64,
+        offset: u64,
+        desc: &crate::TextureDescriptor,
+        drop_callback: Option<crate::DropCallback>,
+    ) -> ash::prelude::VkResult<super::Texture> {
+        const DRM_FORMAT_INVALID: u64 = 0xff_ff_ff_ff_ff_ff_ff;
+
+        let plane_layouts = &[vk::SubresourceLayout {
+            row_pitch: stride,
+            offset,
+            array_pitch: 0,
+            depth_pitch: 0,
+            size: 0,
+        }];
+
+        let mut drm_info = vk::ImageDrmFormatModifierExplicitCreateInfoEXT::default()
+            .drm_format_modifier(if modifier == DRM_FORMAT_INVALID {
+                0
+            } else {
+                modifier
+            })
+            .plane_layouts(plane_layouts);
+
+        let mut external_image_info = vk::ExternalMemoryImageCreateInfo::default()
+            .handle_types(vk::ExternalMemoryHandleTypeFlags::DMA_BUF_EXT);
+
+        let image = unsafe {
+            self.raw_device().create_image(
+                &vk::ImageCreateInfo::default()
+                    .extent(conv::map_copy_extent(&desc.copy_extent()))
+                    .format(self.shared.private_caps.map_texture_format(desc.format))
+                    .samples(vk::SampleCountFlags::from_raw(desc.sample_count))
+                    .usage(conv::map_texture_usage(desc.usage))
+                    .mip_levels(desc.mip_level_count)
+                    .array_layers(desc.array_layer_count())
+                    .image_type(conv::map_texture_dimension(desc.dimension))
+                    .tiling(vk::ImageTiling::DRM_FORMAT_MODIFIER_EXT)
+                    .initial_layout(vk::ImageLayout::UNDEFINED)
+                    .sharing_mode(vk::SharingMode::EXCLUSIVE)
+                    .push_next(&mut external_image_info)
+                    .push_next(&mut drm_info),
+                None,
+            )
+        }?;
+
+        let requirements = unsafe { self.raw_device().get_image_memory_requirements(image) };
+
+        let mut dedicated_info = vk::MemoryDedicatedAllocateInfo::default().image(image);
+
+        let mut memory_import = vk::ImportMemoryFdInfoKHR::default()
+            .handle_type(vk::ExternalMemoryHandleTypeFlags::DMA_BUF_EXT)
+            .fd(file_descriptor);
+
+        let memory = unsafe {
+            self.raw_device().allocate_memory(
+                &vk::MemoryAllocateInfo::default()
+                    .allocation_size(requirements.size)
+                    .push_next(&mut memory_import)
+                    .push_next(&mut dedicated_info),
+                None,
+            )
+        }?;
+
+        unsafe { self.raw_device().bind_image_memory(image, memory, offset) }?;
+
+        // Same as `texture_from_raw`
+
+        let mut raw_flags = vk::ImageCreateFlags::empty();
+        let mut view_formats = vec![];
+        for tf in desc.view_formats.iter() {
+            if *tf == desc.format {
+                continue;
+            }
+            view_formats.push(*tf);
+        }
+        if !view_formats.is_empty() {
+            raw_flags |=
+                vk::ImageCreateFlags::MUTABLE_FORMAT | vk::ImageCreateFlags::EXTENDED_USAGE;
+            view_formats.push(desc.format)
+        }
+        if desc.format.is_multi_planar_format() {
+            raw_flags |= vk::ImageCreateFlags::MUTABLE_FORMAT;
+        }
+
+        let identity = self.shared.texture_identity_factory.next();
+
+        let drop_guard = crate::DropGuard::from_option(drop_callback);
+
+        Ok(super::Texture {
+            raw: image,
+            drop_guard,
+            external_memory: Some(memory),
+            block: None,
+            format: desc.format,
+            copy_size: desc.copy_extent(),
+            identity,
+        })
+    }
+
     #[cfg(windows)]
     fn find_memory_type_index(
         &self,
