@@ -644,7 +644,6 @@ impl super::Device {
         }
     }
 
-    #[cfg(windows)]
     fn find_memory_type_index(
         &self,
         type_bits_req: u32,
@@ -817,6 +816,77 @@ impl super::Device {
             copy_size: image.copy_size,
             identity,
         })
+    }
+
+    pub unsafe fn create_shareable_texture(
+        &self,
+        desc: &crate::TextureDescriptor,
+    ) -> Result<(super::Texture, i32, u64), crate::DeviceError> {
+        let mut external_memory_image_info = vk::ExternalMemoryImageCreateInfo::default()
+            .handle_types(vk::ExternalMemoryHandleTypeFlags::OPAQUE_FD);
+
+        let image =
+            self.create_image_without_memory(desc, Some(&mut external_memory_image_info))?;
+
+        let mem_type_index = self
+            .find_memory_type_index(
+                image.requirements.memory_type_bits,
+                vk::MemoryPropertyFlags::DEVICE_LOCAL,
+            )
+            .ok_or(crate::DeviceError::Unexpected)?;
+
+        let mut export_info = vk::ExportMemoryAllocateInfo::default()
+            .handle_types(vk::ExternalMemoryHandleTypeFlags::OPAQUE_FD);
+
+        let mut dedicated_allocate_info =
+            vk::MemoryDedicatedAllocateInfo::default().image(image.raw);
+
+        let memory_allocate_info = vk::MemoryAllocateInfo::default()
+            .allocation_size(image.requirements.size)
+            .memory_type_index(mem_type_index as _)
+            .push_next(&mut dedicated_allocate_info)
+            .push_next(&mut export_info);
+
+        let memory = unsafe { self.shared.raw.allocate_memory(&memory_allocate_info, None) }
+            .map_err(super::map_host_device_oom_err)?;
+
+        unsafe { self.shared.raw.bind_image_memory(image.raw, memory, 0) }
+            .map_err(super::map_host_device_oom_err)?;
+
+        if let Some(label) = desc.label {
+            unsafe { self.shared.set_object_name(image.raw, label) };
+        }
+
+        let identity = self.shared.texture_identity_factory.next();
+
+        self.counters.textures.add(1);
+
+        let external_memory_fd_api = ash::khr::external_memory_fd::Device::new(
+            &self.shared_instance().raw_instance(),
+            &self.raw_device(),
+        );
+
+        let fd = external_memory_fd_api
+            .get_memory_fd(
+                &vk::MemoryGetFdInfoKHR::default()
+                    .memory(memory)
+                    .handle_type(vk::ExternalMemoryHandleTypeFlags::OPAQUE_FD),
+            )
+            .unwrap();
+
+        Ok((
+            super::Texture {
+                raw: image.raw,
+                drop_guard: None,
+                external_memory: Some(memory),
+                block: None,
+                format: desc.format,
+                copy_size: image.copy_size,
+                identity,
+            },
+            fd,
+            image.requirements.size,
+        ))
     }
 
     fn create_shader_module_impl(
